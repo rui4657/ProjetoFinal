@@ -1,0 +1,11 @@
+fileFormatVersion: 2
+guid: 2c097241892d1874499a6f933fbac046
+DefaultImporter:
+  userData: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 20660
+  packageName: SQLiter
+  packageVersion: 2.0
+  assetPath: Assets/Plugins/SQLiter/Example.unity
+  uploadId: 151554

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f959fbe07ad876d4db291fa7bb457c92
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 20660
+  packageName: SQLiter
+  packageVersion: 2.0
+  assetPath: Assets/Plugins/SQLiter/Scripts/LoomManager.cs
+  uploadId: 151554

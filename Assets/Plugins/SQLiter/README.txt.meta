@@ -1,0 +1,11 @@
+fileFormatVersion: 2
+guid: 5ddcd45dd8c9c1043945cd6ffdcb2c7f
+TextScriptImporter:
+  userData: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 20660
+  packageName: SQLiter
+  packageVersion: 2.0
+  assetPath: Assets/Plugins/SQLiter/README.txt
+  uploadId: 151554

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 890328603456b174fa06644274034c8c
+MonoAssemblyImporter:
+  serializedVersion: 1
+  iconMap: {}
+  executionOrder: {}
+  userData: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 20660
+  packageName: SQLiter
+  packageVersion: 2.0
+  assetPath: Assets/Plugins/SQLiter/DLLs/System.Data.dll
+  uploadId: 151554
