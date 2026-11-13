@@ -14,7 +14,7 @@ public sealed class SurvivalHUD : MonoBehaviour
     Canvas canvas;
     RectTransform safeRoot;
     GameObject playRoot, shopRoot, endRoot;
-    TMP_Text round, remaining, health, ammo, weapon, points, bonus, notice, interaction, countdown;
+    TMP_Text round, remaining, health, ammo, weapon, points, bonus, notice, interaction, countdown, objective, buffs;
     TMP_Text shopBalance, shopNotice, endStats;
     Image healthFill, staminaFill, reloadFill;
     Image[] crosshair, damageEdges;
@@ -46,6 +46,7 @@ public sealed class SurvivalHUD : MonoBehaviour
         var brand = Panel("Brand", playRoot.transform, new Vector2(0, 1), new Vector2(48, -48), new Vector2(240, 54));
         Label(brand, "DEADLINE", 25, paper, new Vector2(16, -10), new Vector2(210, 30));
         Label(brand, "SOBREVIVÊNCIA  /  SOLO", 12, muted, new Vector2(16, -38), new Vector2(210, 18));
+        objective = Label(playRoot.transform, "", 17, paper, new Vector2(48, -130), new Vector2(510, 115));
         var rounds = Panel("Round", playRoot.transform, Vector2.one, new Vector2(-48, -48), new Vector2(270, 124));
         Label(rounds, "RONDA", 14, muted, new Vector2(20, -12), new Vector2(220, 22));
         round = Label(rounds, "01", 56, red, new Vector2(16, -30), new Vector2(225, 66));
@@ -67,6 +68,7 @@ public sealed class SurvivalHUD : MonoBehaviour
         notice = CenterLabel(playRoot.transform, "", 26, paper, new Vector2(0.5f, 1), new Vector2(0, -185), new Vector2(1000, 45));
         countdown = CenterLabel(playRoot.transform, "", 17, muted, new Vector2(0.5f, 0), new Vector2(0, 66), new Vector2(1050, 60));
         interaction = CenterLabel(playRoot.transform, "", 21, gold, new Vector2(0.5f, 0), new Vector2(0, 175), new Vector2(1000, 50));
+        buffs = CenterLabel(playRoot.transform, "", 19, gold, new Vector2(0.5f, 0), new Vector2(0, 122), new Vector2(900, 32));
         crosshair = new Image[4];
         for (int i = 0; i < 4; i++)
         {
@@ -155,23 +157,37 @@ public sealed class SurvivalHUD : MonoBehaviour
         notice.text = Time.unscaledTime < session.MessageUntil ? session.Message : "";
         round.text = r != null ? r.currentRound.ToString("00") : "01";
         remaining.text = r == null ? "" : r.inIntermission ? "PREPARAÇÃO" : r.ZombiesRemaining + " INIMIGOS RESTANTES";
-        countdown.text = r != null && r.inIntermission ? "PRÓXIMA RONDA EM " + Mathf.CeilToInt(r.intermissionTimer) + "s\n[B] ARSENAL   ·   [ENTER] COMEÇAR AGORA" : "[SHIFT] CORRER   ·   [R] RECARREGAR   ·   [ESC] PAUSA";
+        countdown.text = r != null && r.inIntermission ? "PRÓXIMA RONDA EM " + Mathf.CeilToInt(r.intermissionTimer) + "s\n[B] ARSENAL   ·   [ENTER] COMEÇAR AGORA" : "[SHIFT] CORRER   ·   [V] CORPO A CORPO   ·   [R] RECARREGAR   ·   [ESC] PAUSA";
         if (r != null && r.HasSpawnError) countdown.text = "NÃO FOI POSSÍVEL INICIAR A RONDA. [ESC] PARA REGRESSAR AO MENU.";
         interaction.text = Time.unscaledTime < session.InteractionUntil ? session.InteractionPrompt : g != null && g.IsReloading ? "A RECARREGAR…" : g != null && g.currentAmmo == 0 && g.reserveAmmo == 0 ? "SEM MUNIÇÕES · PROCURA O POSTO DE REABASTECIMENTO" : "";
+        buffs.text = (session.DoublePointsActive ? "2× PONTOS  " + Mathf.CeilToInt(session.DoublePointsRemaining) + "s" : "") +
+            (session.DoublePointsActive && session.InstaKillActive ? "     /     " : "") +
+            (session.InstaKillActive ? "INSTA-KILL  " + Mathf.CeilToInt(session.InstaKillRemaining) + "s" : "");
+        var world = WorldProgression.Instance;
+        if (world != null && p != null)
+        {
+            Vector3 toward = world.ObjectivePosition - p.transform.position;
+            toward.y = 0;
+            float angle = Vector3.SignedAngle(p.transform.forward, toward, Vector3.up);
+            string direction = Mathf.Abs(angle) > 150 ? "↓" : angle > 20 ? "→" : angle < -20 ? "←" : "↑";
+            objective.text = "<color=#FFBA52><size=80%>OBJETIVO</size></color>\n" + world.ObjectiveText +
+                (world.HasObjectiveLocation ? "\n<size=85%><color=#929FA3>" + direction + "  " + Mathf.RoundToInt(toward.magnitude) + " m</color></size>" : "");
+        }
+        else objective.text = "";
         if (session.IsShopOpen)
         {
             shopBalance.text = "SALDO   " + session.Points.ToString("N0") + " PONTOS";
             shopNotice.text = Time.unscaledTime < session.MessageUntil ? session.Message : "";
             bool full = g != null && g.currentAmmo >= g.magSize && g.reserveAmmo >= g.maxReserveAmmo;
             OfferState(ammoButton, ammoOffer, full ? "COMPLETO" : "500 PTS", !full && g != null && session.Points >= 500);
-            OfferState(weaponButton, weaponOffer, session.WeaponTier >= 3 ? "NÍVEL MÁXIMO" : session.UpgradeCost + " PTS", session.WeaponTier < 3 && session.Points >= session.UpgradeCost);
-            OfferState(healthButton, healthOffer, session.HealthBonus >= 100 ? "MÁXIMO" : "2000 PTS", session.HealthBonus < 100 && session.Points >= 2000);
-            OfferState(reloadButton, reloadOffer, session.HasQuickReload ? "ATIVO" : "1500 PTS", !session.HasQuickReload && session.Points >= 1500);
+            OfferState(weaponButton, weaponOffer, !session.IsWeaponUpgradeUnlocked ? "BLOQUEADO" : session.WeaponTier >= 3 ? "NÍVEL MÁXIMO" : session.UpgradeCost + " PTS", session.IsWeaponUpgradeUnlocked && session.WeaponTier < 3 && session.Points >= session.UpgradeCost);
+            OfferState(healthButton, healthOffer, !session.ArePerksUnlocked ? "SEM ENERGIA" : session.HealthBonus >= 100 ? "MÁXIMO" : "2000 PTS", session.ArePerksUnlocked && session.HealthBonus < 100 && session.Points >= 2000);
+            OfferState(reloadButton, reloadOffer, !session.ArePerksUnlocked ? "SEM ENERGIA" : session.HasQuickReload ? "ATIVO" : "1500 PTS", session.ArePerksUnlocked && !session.HasQuickReload && session.Points >= 1500);
         }
         if (session.IsGameOver)
         {
             int secs = Mathf.FloorToInt(session.ElapsedSeconds);
-            endStats.text = "RONDA ALCANÇADA    <color=#E63030>" + (r != null ? r.currentRound : 1) + "</color>\n\nELIMINAÇÕES    " + session.Kills + "    <size=65%>HEADSHOTS  " + session.Headshots + "</size>\n\nTEMPO DESTA SESSÃO    " + (secs / 60).ToString("00") + ":" + (secs % 60).ToString("00") + "    <size=65%>RECORDE  " + PlayerPrefs.GetInt("best_round", 1) + " RONDAS</size>";
+            endStats.text = "RONDA ALCANÇADA    <color=#E63030>" + (r != null ? r.currentRound : 1) + "</color>\n\nELIMINAÇÕES    " + session.Kills + "    <size=65%>HEADSHOTS  " + session.Headshots + "</size>\n\nTEMPO DA PARTIDA    " + (secs / 60).ToString("00") + ":" + (secs % 60).ToString("00") + "    <size=65%>RECORDE  " + PlayerPrefs.GetInt("best_round", 1) + " RONDAS</size>";
         }
     }
 

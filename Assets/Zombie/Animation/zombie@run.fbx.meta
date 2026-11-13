@@ -348,7 +348,7 @@ ModelImporter:
     4300008: sborka_pod_uv_sdelannaya_Group31792
     4300010: sborka_pod_uv_sdelannaya_Group15900
     4300012: sborka_pod_uv_sdelannaya_Group45701
-    7400000: Take 001
+    7400000: run
     9500000: //RootNode
     13700000: sborka_pod_uv_sdelannaya_Group13926
     13700002: sborka_pod_uv_sdelannaya_Group15900
@@ -379,7 +379,36 @@ ModelImporter:
     animationScaleError: 0.5
     animationWrapMode: 0
     extraExposedTransformPaths: []
-    clipAnimations: []
+    clipAnimations:
+    - serializedVersion: 16
+      name: run
+      takeName: Take 001
+      internalID: 7400000
+      firstFrame: 1
+      lastFrame: 60
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 1
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 1
     isReadable: 1
   meshes:
     lODScreenPercentages: []

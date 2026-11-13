@@ -59,6 +59,7 @@ public class PauseMenu : MonoBehaviour
             if (!HasPersistentListener(fullscreenToggle.onValueChanged, this, nameof(OnFullscreenChanged)))
                 fullscreenToggle.onValueChanged.AddListener(OnFullscreenChanged);
         }
+        ComfortOptions.Install(fullscreenToggle);
         listenersRegistered = true;
     }
 

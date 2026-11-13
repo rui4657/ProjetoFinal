@@ -1,5 +1,8 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using System.Collections.Generic;
+
+public enum SurvivalPowerUp { MaxAmmo, DoublePoints, InstaKill }
 
 /// <summary>Per-match progression. Installed automatically, so existing scenes need no wiring.</summary>
 public sealed class SurvivalSession : MonoBehaviour
@@ -18,6 +21,9 @@ public sealed class SurvivalSession : MonoBehaviour
     public float DamageMultiplier => 1f + WeaponTier * 0.5f;
     public float ReloadMultiplier => HasQuickReload ? 0.65f : 1f;
     public int UpgradeCost => 1500 * (WeaponTier + 1);
+    public bool IsWeaponUpgradeUnlocked => WorldProgression.Instance == null || WorldProgression.Instance.ProgressionUnavailable ||
+        ((WorldProgression.Instance.UnlockedZones & 1) != 0 && WorldProgression.Instance.PowerEnabled);
+    public bool ArePerksUnlocked => WorldProgression.Instance == null || WorldProgression.Instance.ProgressionUnavailable || WorldProgression.Instance.PowerEnabled;
     public float ElapsedSeconds { get; private set; }
     public float HitMarkerUntil { get; private set; }
     public bool LastHitWasKill { get; private set; }
@@ -33,6 +39,13 @@ public sealed class SurvivalSession : MonoBehaviour
     public GunSystem Gun { get; private set; }
     public RoundManager Rounds { get; private set; }
     public PlayerController Movement { get; private set; }
+    public bool DoublePointsActive => !IsGameOver && Time.time < doublePointsUntil;
+    public bool InstaKillActive => !IsGameOver && Time.time < instaKillUntil;
+    public float DoublePointsRemaining => DoublePointsActive ? doublePointsUntil - Time.time : 0f;
+    public float InstaKillRemaining => InstaKillActive ? instaKillUntil - Time.time : 0f;
+    public int ActiveDropCount { get { drops.RemoveAll(drop => drop == null); return drops.Count; } }
+    private float doublePointsUntil, instaKillUntil;
+    private readonly List<PowerUpPickup> drops = new List<PowerUpPickup>();
     private SurvivalAudio feedback;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -58,6 +71,8 @@ public sealed class SurvivalSession : MonoBehaviour
         Gun = FindFirstObjectByType<GunSystem>();
         Rounds = FindFirstObjectByType<RoundManager>();
         Movement = FindFirstObjectByType<PlayerController>();
+        WorldProgression.Ensure();
+        LevelAtmosphere.Ensure();
         feedback = gameObject.AddComponent<SurvivalAudio>();
         gameObject.AddComponent<SurvivalHUD>();
     }
@@ -86,14 +101,14 @@ public sealed class SurvivalSession : MonoBehaviour
         if (!IsGameOver) ShotsFired++;
     }
 
-    public void RegisterHit(bool killed, bool headshot)
+    public void RegisterHit(bool killed, bool headshot, bool isMelee = false)
     {
         if (IsGameOver) return;
-        Hits++;
+        if (!isMelee) Hits++;
         LastHitWasKill = killed;
         LastHitWasHeadshot = headshot;
         HitMarkerUntil = Time.unscaledTime + (killed ? 0.24f : 0.13f);
-        int reward = killed ? (headshot ? 100 : 60) : 10;
+        int reward = killed ? (isMelee ? 130 : headshot ? 100 : 60) : 10;
         if (killed) { Kills++; if (headshot) Headshots++; }
         AwardPoints(reward);
         if (feedback != null) feedback.Hit(killed, headshot);
@@ -102,9 +117,49 @@ public sealed class SurvivalSession : MonoBehaviour
 
     void AwardPoints(int amount)
     {
-        Points = (int)System.Math.Min(int.MaxValue, (long)Points + Mathf.Max(0, amount));
-        LastPointsAwarded = amount;
+        long reward = (long)Mathf.Max(0, amount) * (DoublePointsActive ? 2 : 1);
+        Points = (int)System.Math.Min(int.MaxValue, (long)Points + reward);
+        LastPointsAwarded = (int)System.Math.Min(int.MaxValue, reward);
         PointsPopupUntil = Time.unscaledTime + 0.8f;
+    }
+
+    public void AwardBonus(int amount)
+    {
+        if (IsGameOver) return;
+        AwardPoints(amount);
+        if (SaveSystem.instance != null) SaveSystem.instance.RequestSave();
+    }
+
+    public void ActivatePowerUp(SurvivalPowerUp kind)
+    {
+        if (IsGameOver) return;
+        switch (kind)
+        {
+            case SurvivalPowerUp.MaxAmmo:
+                if (Gun == null) return;
+                Gun.AddReserveAmmo(Gun.maxReserveAmmo, true);
+                ShowMessage("MUNIÇÕES MÁXIMAS", 3f);
+                break;
+            case SurvivalPowerUp.DoublePoints:
+                doublePointsUntil = Time.time + 30f;
+                ShowMessage("PONTOS A DOBRAR · 30 SEGUNDOS", 3f);
+                break;
+            case SurvivalPowerUp.InstaKill:
+                instaKillUntil = Time.time + 10f;
+                ShowMessage("MORTE INSTANTÂNEA · 10 SEGUNDOS", 3f);
+                break;
+        }
+        if (feedback != null) feedback.Purchase();
+    }
+
+    public void TryDropPowerUp(Vector3 position)
+    {
+        if (IsGameOver || ActiveDropCount >= 3 || Random.value > 0.08f) return;
+        if (float.IsNaN(position.x) || float.IsNaN(position.y) || float.IsNaN(position.z) ||
+            float.IsInfinity(position.x) || float.IsInfinity(position.y) || float.IsInfinity(position.z)) return;
+        var kind = (SurvivalPowerUp)Random.Range(0, 3);
+        var pickup = PowerUpPickup.Create(this, kind, position);
+        if (pickup != null) drops.Add(pickup);
     }
 
     public bool TrySpend(int amount)
@@ -122,7 +177,7 @@ public sealed class SurvivalSession : MonoBehaviour
         int bonus = 100 + Mathf.Min(completedRound, 50) * 25;
         AwardPoints(bonus);
         if (feedback != null) feedback.RoundComplete();
-        ShowMessage("RONDA CONCLUÍDA  +" + bonus + " PONTOS", 4f);
+        ShowMessage("RONDA CONCLUÍDA  +" + LastPointsAwarded + " PONTOS", 4f);
         if (SaveSystem.instance != null) SaveSystem.instance.RequestSave();
     }
 
@@ -145,39 +200,72 @@ public sealed class SurvivalSession : MonoBehaviour
     }
 
     public void BuyAmmo()
+    { if (CanBuy()) TryBuyAmmo(); }
+
+    bool TryBuyAmmo()
     {
-        if (!CanBuy() || Gun == null) return;
+        if (Gun == null) return false;
         if (Gun.reserveAmmo >= Gun.maxReserveAmmo && Gun.currentAmmo >= Gun.magSize)
-        { ShowMessage("Munições completas."); return; }
-        if (!TrySpend(500)) return;
+        { ShowMessage("Munições completas."); return false; }
+        if (!TrySpend(500)) return false;
         Gun.AddReserveAmmo(Gun.maxReserveAmmo, true);
         if (feedback != null) feedback.Purchase();
         ShowMessage("Munições reabastecidas.");
+        return true;
     }
 
     public void BuyWeaponUpgrade()
+    { if (CanBuy()) TryBuyWeaponUpgrade(); }
+
+    bool TryBuyWeaponUpgrade()
     {
-        if (!CanBuy() || WeaponTier >= 3 || !TrySpend(UpgradeCost)) return;
+        if (!IsWeaponUpgradeUnlocked) { ShowMessage("Liberta a igreja e ativa o gerador primeiro."); return false; }
+        if (WeaponTier >= 3 || !TrySpend(UpgradeCost)) return false;
         WeaponTier++;
         if (feedback != null) feedback.Purchase();
         ShowMessage("ARMA MELHORADA · NÍVEL " + WeaponTier);
+        return true;
     }
 
     public void BuyHealthUpgrade()
+    { if (CanBuy()) TryBuyHealthUpgrade(); }
+
+    bool TryBuyHealthUpgrade()
     {
-        if (!CanBuy() || Player == null || HealthBonus >= 100 || !TrySpend(2000)) return;
+        if (!ArePerksUnlocked) { ShowMessage("Ativa o gerador para usar as melhorias."); return false; }
+        if (Player == null || HealthBonus >= 100 || !TrySpend(2000)) return false;
         HealthBonus += 50;
         Player.IncreaseMaxHealth(50);
         if (feedback != null) feedback.Purchase();
         ShowMessage("FORTITUDE · +50 VIDA MÁXIMA");
+        return true;
     }
 
     public void BuyQuickReload()
+    { if (CanBuy()) TryBuyQuickReload(); }
+
+    bool TryBuyQuickReload()
     {
-        if (!CanBuy() || HasQuickReload || !TrySpend(1500)) return;
+        if (!ArePerksUnlocked) { ShowMessage("Ativa o gerador para usar as melhorias."); return false; }
+        if (HasQuickReload || !TrySpend(1500)) return false;
         HasQuickReload = true;
         if (feedback != null) feedback.Purchase();
         ShowMessage("RECARGA RÁPIDA ATIVA");
+        return true;
+    }
+
+    public bool UseWorldService(WorldService service)
+    {
+        var world = WorldProgression.Instance;
+        if (IsGameOver || world == null || !world.CanUseService(service)) return false;
+        switch (service)
+        {
+            case WorldService.Ammo: return TryBuyAmmo();
+            case WorldService.WeaponUpgrade: return TryBuyWeaponUpgrade();
+            case WorldService.HealthUpgrade: return TryBuyHealthUpgrade();
+            case WorldService.QuickReload: return TryBuyQuickReload();
+            default: return false;
+        }
     }
 
     bool CanBuy() => IsShopOpen && !IsGameOver && Rounds != null && Rounds.inIntermission;
@@ -191,6 +279,8 @@ public sealed class SurvivalSession : MonoBehaviour
         WeaponTier = Mathf.Clamp(state.weapon_tier, 0, 3);
         HealthBonus = Mathf.Clamp(state.health_bonus, 0, 100);
         HasQuickReload = state.reload_perk != 0;
+        ElapsedSeconds = float.IsNaN(state.elapsed_seconds) || float.IsInfinity(state.elapsed_seconds)
+            ? 0f : Mathf.Clamp(state.elapsed_seconds, 0f, 31536000f);
     }
 
     public void ShowMessage(string message, float seconds = 2.5f)
@@ -210,6 +300,9 @@ public sealed class SurvivalSession : MonoBehaviour
         if (IsGameOver) return;
         IsGameOver = true;
         IsShopOpen = false;
+        doublePointsUntil = instaKillUntil = 0f;
+        foreach (var drop in drops) if (drop != null) Destroy(drop.gameObject);
+        drops.Clear();
         if (Rounds != null) Rounds.StopWaves();
         if (SaveSystem.instance != null) SaveSystem.instance.DeleteSave();
         int round = Rounds != null ? Rounds.currentRound : 1;

@@ -39,6 +39,7 @@ public class MenuOptions : MonoBehaviour
             if (!HasPersistentListener(fullscreenToggle.onValueChanged, nameof(OnFullscreenChanged)))
                 fullscreenToggle.onValueChanged.AddListener(OnFullscreenChanged);
         }
+        ComfortOptions.Install(fullscreenToggle);
         listenersRegistered = true;
         UpdateTexts(volume, sensitivity);
     }

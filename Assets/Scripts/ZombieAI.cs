@@ -21,6 +21,30 @@ public class ZombieAI : MonoBehaviour
     private bool hasSpeedParameter;
     private bool hasAttackParameter;
     private bool hasDeadParameter;
+    private bool hasHurtParameter;
+    private bool hasHeadshotParameter;
+    private bool hasAnimationRateParameter;
+    private bool hasCycleOffsetParameter;
+    private bool attackInterrupted;
+    private bool powerUpRolled;
+    private float staggerUntil;
+    private float nextStaggerTime;
+    private float hitFlashUntil;
+    private float lastFlashStrength = -1f;
+    private float cadenceVariation;
+    private Collider bodyCollider;
+    private Collider targetCollider;
+    private VisualSurface[] visualSurfaces;
+    private static readonly int ColorProperty = Shader.PropertyToID("_Color");
+    private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
+
+    private struct VisualSurface
+    {
+        public Renderer renderer;
+        public MaterialPropertyBlock properties;
+        public int colorProperty;
+        public Color baseColor;
+    }
 
     [Header("Combat")]
     public float attackRange = 2f;
@@ -41,6 +65,15 @@ public class ZombieAI : MonoBehaviour
     public string attackTrigger = "Attack";
     public string deadBool = "Dead";
     public string deathStateName = "death1";
+    public string headshotDeathStateName = "death2";
+    public string hurtTrigger = "Hurt";
+    [Min(0.1f)] public float walkAnimationSpeed = 2f;
+    [Min(0.1f)] public float runAnimationSpeed = 4.4f;
+
+    [Header("Hit reaction")]
+    [Range(0f, 0.5f)] public float staggerDuration = 0.3f;
+    [Min(0.5f)] public float staggerCooldown = 1.15f;
+    [Range(0f, 0.1f)] public float appearanceVariation = 0.07f;
 
     [Header("3D audio")]
     public AudioSource sfx;
@@ -74,8 +107,22 @@ public class ZombieAI : MonoBehaviour
         currentHealth = baseHealth;
         baseSpeed = agent != null ? agent.speed : 3.5f;
         playerHealth = FindFirstObjectByType<PlayerHealth>();
-        if (playerHealth != null) target = playerHealth.transform;
+        bodyCollider = GetComponent<Collider>();
+        if (playerHealth != null)
+        {
+            target = playerHealth.transform;
+            targetCollider = playerHealth.GetComponent<Collider>();
+        }
         CacheAnimatorParameters();
+        cadenceVariation = Random.Range(0.96f, 1.04f);
+        if (anim != null)
+        {
+            // The agent owns translation. Root motion and global Animator speed would
+            // otherwise fight navigation or alter the timing of attacks and deaths.
+            anim.applyRootMotion = false;
+            if (hasCycleOffsetParameter) anim.SetFloat("CycleOffset", Random.value);
+        }
+        CacheVisualVariation();
 
         if (sfx == null) sfx = GetComponent<AudioSource>();
         if (sfx == null) sfx = gameObject.AddComponent<AudioSource>();
@@ -109,6 +156,7 @@ public class ZombieAI : MonoBehaviour
 
     private void Update()
     {
+        UpdateVisualFeedback();
         if (IsDead || Time.timeScale <= 0f) return;
         if (RunEnded || target == null)
         {
@@ -117,6 +165,12 @@ public class ZombieAI : MonoBehaviour
             return;
         }
         if (!AgentReady) return;
+        if (Time.time < staggerUntil)
+        {
+            SetStopped(true);
+            SetAnimationSpeed(0f);
+            return;
+        }
 
         if (!attacking && Time.time >= nextRepath)
         {
@@ -126,8 +180,7 @@ public class ZombieAI : MonoBehaviour
         }
         SetAnimationSpeed(attacking ? 0f : agent.velocity.magnitude);
 
-        float distanceSquared = (target.position - transform.position).sqrMagnitude;
-        if (canAttack && Time.time >= nextAttackCheck && distanceSquared <= attackRange * attackRange)
+        if (canAttack && Time.time >= nextAttackCheck && CanReachPlayer())
         {
             nextAttackCheck = Time.time + 0.1f;
             if (HasClearAttack()) StartCoroutine(Attack());
@@ -146,14 +199,15 @@ public class ZombieAI : MonoBehaviour
     {
         canAttack = false;
         attacking = true;
+        attackInterrupted = false;
         SetStopped(true);
         if (anim != null && hasAttackParameter) anim.SetTrigger(attackTrigger);
         PlayOne(attackClip, attackVol);
 
         // The player has time to dodge. Starting an animation is not an automatic hit.
         yield return new WaitForSeconds(Mathf.Max(0f, attackWindup));
-        if (!IsDead && !RunEnded && target != null && playerHealth != null &&
-            (target.position - transform.position).sqrMagnitude <= attackRange * attackRange && HasClearAttack())
+        if (!IsDead && !RunEnded && !attackInterrupted && Time.time >= staggerUntil &&
+            target != null && playerHealth != null && CanReachPlayer() && HasClearAttack())
         {
             playerHealth.TakeDamage(Mathf.Max(0, damage));
         }
@@ -161,14 +215,27 @@ public class ZombieAI : MonoBehaviour
         yield return new WaitForSeconds(Mathf.Max(0.05f, attackCooldown - attackWindup));
         attacking = false;
         canAttack = !IsDead && !RunEnded;
-        if (canAttack) SetStopped(false);
+        if (canAttack && Time.time >= staggerUntil) SetStopped(false);
+    }
+
+    private Vector3 AttackOrigin => bodyCollider != null ? bodyCollider.bounds.center : transform.TransformPoint(Vector3.up);
+    private Vector3 TargetCenter => targetCollider != null ? targetCollider.bounds.center : target.position + Vector3.up;
+
+    private bool CanReachPlayer()
+    {
+        if (target == null) return false;
+        // Using feet as a second check prevents a tall collider reaching through a
+        // ceiling; using actual centers also respects the prefab's nonuniform scale.
+        if (bodyCollider != null && targetCollider != null &&
+            Mathf.Abs(bodyCollider.bounds.min.y - targetCollider.bounds.min.y) > 1.25f) return false;
+        return (TargetCenter - AttackOrigin).sqrMagnitude <= attackRange * attackRange;
     }
 
     private bool HasClearAttack()
     {
         if (target == null || playerHealth == null) return false;
-        Vector3 start = transform.position + Vector3.up;
-        Vector3 finish = target.position + Vector3.up;
+        Vector3 start = AttackOrigin;
+        Vector3 finish = TargetCenter;
         Vector3 direction = finish - start;
         float distance = direction.magnitude;
         if (distance <= 0.001f) return true;
@@ -204,10 +271,28 @@ public class ZombieAI : MonoBehaviour
             PlayOne(hurtClip, hurtVol);
             nextHurtTime = Time.time + Mathf.Max(0f, hurtSfxCooldown);
         }
-        if (currentHealth == 0) Die();
+        hitFlashUntil = Time.time + 0.13f;
+        if (currentHealth == 0) Die(headshot);
+        else TryStagger(headshot);
     }
 
-    private void Die()
+    private void TryStagger(bool headshot)
+    {
+        // Even automatic fire cannot keep a zombie permanently stunned.
+        if (Time.time < nextStaggerTime || staggerDuration <= 0f) return;
+        staggerUntil = Time.time + Mathf.Min(0.45f, staggerDuration * (headshot ? 1.25f : 1f));
+        nextStaggerTime = Time.time + Mathf.Max(staggerDuration + 0.5f, staggerCooldown);
+        nextRepath = staggerUntil;
+        attackInterrupted = attacking;
+        SetStopped(true);
+        if (anim != null && hasHurtParameter)
+        {
+            if (hasAttackParameter) anim.ResetTrigger(attackTrigger);
+            anim.SetTrigger(hurtTrigger);
+        }
+    }
+
+    private void Die(bool headshot)
     {
         if (IsDead) return;
         IsDead = true;
@@ -219,16 +304,57 @@ public class ZombieAI : MonoBehaviour
         foreach (Collider collider in GetComponentsInChildren<Collider>()) collider.enabled = false;
 
         SetAnimationSpeed(0f);
+        int deathState = 0;
+        bool useHeadshotDeath = false;
         if (anim != null)
         {
+            int headshotState = ResolveStateHash(headshotDeathStateName);
+            useHeadshotDeath = headshot && headshotState != 0;
+            if (hasAttackParameter) anim.ResetTrigger(attackTrigger);
+            if (hasHurtParameter) anim.ResetTrigger(hurtTrigger);
+            if (hasHeadshotParameter) anim.SetBool("HeadshotDeath", useHeadshotDeath);
             if (hasDeadParameter) anim.SetBool(deadBool, true);
-            int state = Animator.StringToHash(deathStateName);
-            if (!string.IsNullOrEmpty(deathStateName) && anim.HasState(0, state)) anim.CrossFade(state, 0.05f);
+            deathState = useHeadshotDeath ? headshotState : ResolveStateHash(deathStateName);
+            if (deathState != 0) anim.CrossFade(deathState, 0.06f);
         }
         PlayOne(deathClip, deathVol);
+        if (!powerUpRolled)
+        {
+            powerUpRolled = true;
+            if (SurvivalSession.Instance != null) SurvivalSession.Instance.TryDropPowerUp(transform.position);
+        }
         NotifyRoundOnce();
-        float delay = deathAnim != null ? deathAnim.length : destroyDelay;
-        Destroy(gameObject, Mathf.Max(0.1f, delay));
+        StartCoroutine(RemoveCorpse(deathState, useHeadshotDeath));
+    }
+
+    private IEnumerator RemoveCorpse(int deathState, bool headshot)
+    {
+        // Source FBX deaths last 6.63s / 4.96s. The old 2s timeout removed a body
+        // before the fall finished. Read the evaluated state too, for custom clips.
+        float lifetime = deathAnim != null ? deathAnim.length : (headshot ? 5.2f : 6.8f);
+        lifetime = Mathf.Max(Mathf.Max(0.1f, destroyDelay), lifetime);
+        yield return null;
+        if (anim != null && anim.isActiveAndEnabled)
+        {
+            AnimatorStateInfo state = anim.GetCurrentAnimatorStateInfo(0);
+            if (anim.IsInTransition(0)) state = anim.GetNextAnimatorStateInfo(0);
+            if ((state.shortNameHash == deathState || state.fullPathHash == deathState) && state.length > 0f)
+            {
+                float playback = Mathf.Max(0.1f, Mathf.Abs(state.speed * state.speedMultiplier * anim.speed));
+                lifetime = Mathf.Max(lifetime, state.length / playback + 0.25f);
+            }
+        }
+        yield return new WaitForSeconds(lifetime);
+        Destroy(gameObject);
+    }
+
+    private int ResolveStateHash(string stateName)
+    {
+        if (anim == null || string.IsNullOrEmpty(stateName)) return 0;
+        int hash = Animator.StringToHash(stateName);
+        if (anim.HasState(0, hash)) return hash;
+        hash = Animator.StringToHash("Base Layer." + stateName);
+        return anim.HasState(0, hash) ? hash : 0;
     }
 
     private void NotifyRoundOnce()
@@ -257,12 +383,64 @@ public class ZombieAI : MonoBehaviour
             if (parameter.name == speedParam && parameter.type == AnimatorControllerParameterType.Float) hasSpeedParameter = true;
             if (parameter.name == attackTrigger && parameter.type == AnimatorControllerParameterType.Trigger) hasAttackParameter = true;
             if (parameter.name == deadBool && parameter.type == AnimatorControllerParameterType.Bool) hasDeadParameter = true;
+            if (parameter.name == hurtTrigger && parameter.type == AnimatorControllerParameterType.Trigger) hasHurtParameter = true;
+            if (parameter.name == "HeadshotDeath" && parameter.type == AnimatorControllerParameterType.Bool) hasHeadshotParameter = true;
+            if (parameter.name == "AnimationRate" && parameter.type == AnimatorControllerParameterType.Float) hasAnimationRateParameter = true;
+            if (parameter.name == "CycleOffset" && parameter.type == AnimatorControllerParameterType.Float) hasCycleOffsetParameter = true;
         }
     }
 
     private void SetAnimationSpeed(float value)
     {
-        if (anim != null && hasSpeedParameter) anim.SetFloat(speedParam, value);
+        if (anim == null) return;
+        if (hasSpeedParameter) anim.SetFloat(speedParam, value, 0.08f, Time.deltaTime);
+        if (hasAnimationRateParameter)
+        {
+            float referenceSpeed = value >= 2.7f ? runAnimationSpeed : walkAnimationSpeed;
+            float rate = value > 0.1f ? Mathf.Clamp(value / Mathf.Max(0.1f, referenceSpeed) * cadenceVariation, 0.6f, 1.45f) : 1f;
+            anim.SetFloat("AnimationRate", rate, 0.1f, Time.deltaTime);
+        }
+    }
+
+    private void CacheVisualVariation()
+    {
+        Renderer[] renderers = GetComponentsInChildren<Renderer>();
+        visualSurfaces = new VisualSurface[renderers.Length];
+        float variation = Mathf.Clamp(appearanceVariation, 0f, 0.1f);
+        Color tint = Color.Lerp(new Color(0.92f, 0.98f, 0.9f, 1f), new Color(1f, 0.93f, 0.89f, 1f), Random.value);
+        tint = Color.Lerp(Color.white, tint, variation / 0.1f);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            Material material = renderer.sharedMaterial;
+            if (material == null) continue;
+            int property = material.HasProperty(BaseColorProperty) ? BaseColorProperty : ColorProperty;
+            if (!material.HasProperty(property)) continue;
+            MaterialPropertyBlock properties = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(properties);
+            Color baseColor = material.GetColor(property) * tint;
+            baseColor.a = material.GetColor(property).a;
+            visualSurfaces[i] = new VisualSurface { renderer = renderer, properties = properties, colorProperty = property, baseColor = baseColor };
+            properties.SetColor(property, baseColor);
+            renderer.SetPropertyBlock(properties);
+        }
+    }
+
+    private void UpdateVisualFeedback()
+    {
+        float strength = Mathf.Clamp01((hitFlashUntil - Time.time) / 0.13f);
+        if (visualSurfaces == null || Mathf.Abs(strength - lastFlashStrength) < 0.01f) return;
+        lastFlashStrength = strength;
+        for (int i = 0; i < visualSurfaces.Length; i++)
+        {
+            VisualSurface surface = visualSurfaces[i];
+            if (surface.renderer == null || surface.properties == null) continue;
+            Color bruised = surface.baseColor * new Color(1.08f, 0.65f, 0.6f, 1f);
+            Color color = Color.Lerp(surface.baseColor, bruised, strength * 0.35f);
+            color.a = surface.baseColor.a;
+            surface.properties.SetColor(surface.colorProperty, color);
+            surface.renderer.SetPropertyBlock(surface.properties);
+        }
     }
 
     private void PlayOne(AudioClip clip, float volume)

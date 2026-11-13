@@ -83,6 +83,8 @@ def main():
     parser.add_argument("project", nargs="?", type=Path, default=HERE.parents[1],
                         help="Unity project root (default: repository containing this tool)")
     parser.add_argument("--dotnet-root", help="Directory containing the dotnet host and SDK")
+    parser.add_argument("--suite", action="append", choices=["Waves", "Database", "Gameplay"],
+                        help="Run only the selected suite (may be repeated)")
     args = parser.parse_args()
     project = args.project.expanduser().resolve()
     if not (project / "Assets/Scripts/RoundManager.cs").exists():
@@ -102,6 +104,8 @@ def main():
             "Gameplay": sorted((project / "Assets/Scripts").rglob("*.cs")),
         }
         for name, actual_sources in groups.items():
+            if args.suite and name not in args.suite:
+                continue
             output = temporary / (name + ".dll")
             command = [str(dotnet), "exec", str(compiler), "-nologo", "-noconfig", "-nostdlib",
                        "-target:exe", "-nowarn:0649,0067,0108", "-out:" + str(output)]
@@ -122,6 +126,10 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (RuntimeError, subprocess.CalledProcessError) as error:
+    except RuntimeError as error:
         print("Verification failed: " + str(error), file=sys.stderr)
+        sys.exit(1)
+    except subprocess.CalledProcessError as error:
+        print("Verification process failed with exit code " + str(error.returncode) +
+              "; see compiler/test output above.", file=sys.stderr)
         sys.exit(1)
