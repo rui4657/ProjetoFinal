@@ -1,32 +1,35 @@
-using UnityEngine;
+using System;
 using System.Collections;
-using UnityEngine.EventSystems;
-
+using UnityEngine;
 
 public class GunSystem : MonoBehaviour
 {
-    [Header("Info da Arma")]
+    [Header("Arma")]
     public string gunName = "AK";
-
-    [Header("Referências")]
     public Camera playerCam;
     public Transform muzzlePoint;
     public PlayerHealth player;
 
     [Header("Tiro")]
-    public float fireRate = 8f;
-    public float maxDistance = 100f;
-    public int damage = 20;
-    public LayerMask hitMask;
+    [Min(0.1f)] public float fireRate = 8f;
+    [Min(1f)] public float maxDistance = 100f;
+    [Min(1)] public int damage = 20;
+    public LayerMask hitMask = Physics.DefaultRaycastLayers;
+    [Min(1f)] public float headshotMultiplier = 2.5f;
+    [Range(0f, 5f)] public float hipSpread = 0.85f;
+    [Range(0f, 2f)] public float aimedSpread = 0.08f;
+    [Range(0f, 5f)] public float recoil = 0.9f;
 
-    [Header("Munição")]
-    public int magSize = 30;
+    [Header("MuniÃ§Ã£o")]
+    [Min(1)] public int magSize = 30;
     public int reserveAmmo = 120;
     public int currentAmmo;
-    public float reloadTime = 2f;
+    [Min(1)] public int maxReserveAmmo = 300;
+    [Min(0.1f)] public float reloadTime = 2f;
 
-    private bool reloading = false;
-    private float nextTimeToFire = 0f;
+    [Header("Pontaria")]
+    [Range(20f, 80f)] public float aimedFieldOfView = 44f;
+    [Min(1f)] public float aimTransitionSpeed = 12f;
 
     [Header("Efeitos")]
     public ParticleSystem muzzleFlash;
@@ -41,170 +44,233 @@ public class GunSystem : MonoBehaviour
     [Range(0f, 1f)] public float shotVolume = 1f;
     [Range(0f, 1f)] public float reloadVolume = 1f;
 
-    void Start()
+    public bool IsReloading { get; private set; }
+    public bool IsAiming { get; private set; }
+    public float ReloadProgress => IsReloading ? Mathf.Clamp01((Time.time - reloadStartedAt) / reloadDuration) : 0f;
+
+    private readonly RaycastHit[] raycastBuffer = new RaycastHit[64];
+    private MouseLook mouseLook;
+    private PlayerController movement;
+    private Coroutine reloadRoutine;
+    private float nextTimeToFire;
+    private float reloadStartedAt;
+    private float reloadDuration = 1f;
+    private float trailExpiresAt;
+    private float baseFieldOfView = 60f;
+    private int initialReserveAmmo;
+
+    void Awake()
     {
-        if (bulletTrail != null)
+        if (!playerCam) playerCam = Camera.main;
+        if (!player) player = GetComponentInParent<PlayerHealth>();
+        if (!player) player = FindFirstObjectByType<PlayerHealth>();
+        if (!sfxSource) sfxSource = GetComponent<AudioSource>();
+        if (playerCam)
+        {
+            baseFieldOfView = playerCam.fieldOfView;
+            mouseLook = playerCam.GetComponent<MouseLook>();
+        }
+        if (player) movement = player.GetComponent<PlayerController>();
+        initialReserveAmmo = Mathf.Clamp(reserveAmmo, 0, maxReserveAmmo);
+        InitNewGame();
+        if (bulletTrail)
         {
             bulletTrail.positionCount = 2;
+            bulletTrail.useWorldSpace = true;
             bulletTrail.enabled = false;
         }
-
-        if (sfxSource == null)
-            sfxSource = GetComponent<AudioSource>();
     }
 
     void Update()
     {
-        if (Time.timeScale == 0f) return;
-        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
-        if (reloading) return;
-
-        // RELOAD manual (R)
-        if (Input.GetKeyDown(KeyCode.R))
+        if (bulletTrail && Time.time >= trailExpiresAt) bulletTrail.enabled = false;
+        bool blocked = Time.timeScale <= 0f || (player && player.IsDead)
+            || (SurvivalSession.Instance != null && SurvivalSession.Instance.IsGameOver)
+            || Cursor.lockState != CursorLockMode.Locked;
+        if (blocked)
         {
-            // Só recarrega se houver reserva e se o carregador não estiver cheio
-            if (reserveAmmo > 0 && currentAmmo < magSize)
-                StartCoroutine(Reload());
-
+            IsAiming = false;
+            if (player && player.IsDead) CancelReload();
             return;
         }
-
-        // Se o carregador ficou vazio, só tenta recarregar se houver reserva.
+        IsAiming = !IsReloading && Input.GetMouseButton(1);
+        if (IsReloading) return;
+        if (Input.GetKeyDown(KeyCode.R) || (currentAmmo == 0 && reserveAmmo > 0))
+        {
+            BeginReload();
+            return;
+        }
         if (currentAmmo <= 0)
         {
-            if (reserveAmmo > 0)
-                StartCoroutine(Reload());
-
-            return; // se não houver reserva, não faz nada (não entra em loop)
+            if (Input.GetMouseButtonDown(0) && SurvivalSession.Instance != null)
+                SurvivalSession.Instance.ShowMessage("SEM MUNIÃ‡Ã•ES Â· procura a estaÃ§Ã£o de abastecimento");
+            return;
         }
+        if (Input.GetMouseButton(0) && Time.time >= nextTimeToFire && playerCam) ShootIfPossible();
+    }
 
-        // AK: segurar = rajada, click = um tiro (porque depende do fireRate)
-        if (Input.GetButton("Fire1") && Time.time >= nextTimeToFire)
-        {
-            ShootIfPossible();
-        }
+    void LateUpdate()
+    {
+        if (!playerCam || Time.timeScale <= 0f) return;
+        float target = IsAiming ? Mathf.Min(aimedFieldOfView, baseFieldOfView) : baseFieldOfView;
+        if (!IsAiming && movement && movement.IsSprinting) target += 5f;
+        playerCam.fieldOfView = Mathf.Lerp(playerCam.fieldOfView, target, 1f - Mathf.Exp(-aimTransitionSpeed * Time.deltaTime));
     }
 
     void ShootIfPossible()
     {
-        if (currentAmmo <= 0) return;
-
         currentAmmo--;
-        nextTimeToFire = Time.time + 1f / fireRate;
-
-        if (sfxSource && shotClip)
-            sfxSource.PlayOneShot(shotClip, shotVolume);
-
-        SaveCurrentState();
+        nextTimeToFire = Time.time + 1f / Mathf.Max(0.1f, fireRate);
+        if (sfxSource && shotClip) sfxSource.PlayOneShot(shotClip, shotVolume);
+        if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterShot();
         Shoot();
+        if (mouseLook) mouseLook.AddRecoil(recoil * (IsAiming ? 0.6f : 1f), UnityEngine.Random.Range(-recoil, recoil) * 0.3f);
+        RequestSave();
+    }
+
+    void BeginReload()
+    {
+        if (IsReloading || reserveAmmo <= 0 || currentAmmo >= magSize) return;
+        IsAiming = false;
+        IsReloading = true;
+        reloadStartedAt = Time.time;
+        float multiplier = SurvivalSession.Instance != null ? SurvivalSession.Instance.ReloadMultiplier : 1f;
+        reloadDuration = Mathf.Max(0.1f, reloadTime * multiplier);
+        reloadRoutine = StartCoroutine(Reload());
     }
 
     IEnumerator Reload()
     {
-        // anti-loop
-        if (reloading) yield break;
-        if (reserveAmmo <= 0) yield break;
-        if (currentAmmo >= magSize) yield break;
-
-        reloading = true;
-
-        if (sfxSource && reloadClip)
-            sfxSource.PlayOneShot(reloadClip, reloadVolume);
-
-        yield return new WaitForSeconds(reloadTime);
-
-        int missing = magSize - currentAmmo;
-        int toLoad = Mathf.Min(missing, reserveAmmo);
-
-        // Se por algum motivo não houver nada para carregar, sai sem loop
-        if (toLoad <= 0)
-        {
-            reloading = false;
-            yield break;
-        }
-
+        if (sfxSource && reloadClip) sfxSource.PlayOneShot(reloadClip, reloadVolume);
+        yield return new WaitForSeconds(reloadDuration);
+        if (player && player.IsDead) { CancelReload(); yield break; }
+        int toLoad = Mathf.Min(Mathf.Max(0, magSize - currentAmmo), reserveAmmo);
         currentAmmo += toLoad;
         reserveAmmo -= toLoad;
+        IsReloading = false;
+        reloadRoutine = null;
+        RequestSave();
+    }
 
-        reloading = false;
-
-        SaveCurrentState();
+    void CancelReload()
+    {
+        if (reloadRoutine != null) StopCoroutine(reloadRoutine);
+        reloadRoutine = null;
+        IsReloading = false;
     }
 
     void Shoot()
     {
-        Ray ray = new Ray(playerCam.transform.position, playerCam.transform.forward);
-        RaycastHit hit;
-        Vector3 hitPoint;
-
-        if (Physics.Raycast(ray, out hit, maxDistance, hitMask))
+        Vector2 spread = UnityEngine.Random.insideUnitCircle * (IsAiming ? aimedSpread : hipSpread);
+        Vector3 direction = playerCam.transform.TransformDirection(Quaternion.Euler(spread.y, spread.x, 0f) * Vector3.forward);
+        Ray ray = new Ray(playerCam.transform.position, direction);
+        Vector3 hitPoint = ray.GetPoint(maxDistance);
+        if (FindClosestHit(ray, out RaycastHit hit))
         {
             hitPoint = hit.point;
-
-            ZombieAI zombie = hit.collider.GetComponent<ZombieAI>();
-            if (zombie != null)
-                zombie.TakeDamage(damage);
-
-            HealthDummy dummy = hit.collider.GetComponent<HealthDummy>();
-            if (dummy != null)
-                dummy.TakeDamage(damage);
-
-            if (impactEffect != null)
-                Instantiate(impactEffect, hit.point, Quaternion.LookRotation(hit.normal));
+            ZombieAI zombie = hit.collider.GetComponentInParent<ZombieAI>();
+            if (zombie && !zombie.IsDead)
+            {
+                bool headshot = IsHeadshot(hit, zombie);
+                float multiplier = SurvivalSession.Instance != null ? SurvivalSession.Instance.DamageMultiplier : 1f;
+                int hitDamage = Mathf.Max(1, Mathf.RoundToInt(damage * multiplier * (headshot ? headshotMultiplier : 1f)));
+                zombie.TakeDamage(hitDamage, headshot);
+                if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterHit(zombie.IsDead, headshot);
+            }
+            else
+            {
+                HealthDummy dummy = hit.collider.GetComponentInParent<HealthDummy>();
+                if (dummy) dummy.TakeDamage(damage);
+            }
+            if (impactEffect)
+            {
+                GameObject impact = Instantiate(impactEffect, hit.point + hit.normal * 0.01f, Quaternion.LookRotation(hit.normal));
+                Destroy(impact, 2f);
+            }
         }
-        else
+        if (muzzleFlash) muzzleFlash.Play();
+        if (bulletTrail && muzzlePoint)
         {
-            hitPoint = playerCam.transform.position + playerCam.transform.forward * maxDistance;
+            bulletTrail.SetPosition(0, muzzlePoint.position);
+            bulletTrail.SetPosition(1, hitPoint);
+            bulletTrail.enabled = true;
+            trailExpiresAt = Time.time + Mathf.Max(0.01f, trailTime);
         }
-
-        if (muzzleFlash != null)
-            muzzleFlash.Play();
-
-        if (bulletTrail != null && muzzlePoint != null)
-            StartCoroutine(ShowTrail(hitPoint));
     }
 
-    IEnumerator ShowTrail(Vector3 hitPoint)
+    bool FindClosestHit(Ray ray, out RaycastHit closest)
     {
-        bulletTrail.enabled = true;
-        bulletTrail.SetPosition(0, muzzlePoint.position);
-        bulletTrail.SetPosition(1, hitPoint);
-
-        yield return new WaitForSeconds(trailTime);
-
-        bulletTrail.enabled = false;
+        int mask = hitMask.value == 0 ? Physics.DefaultRaycastLayers : hitMask.value;
+        int count = Physics.RaycastNonAlloc(ray, raycastBuffer, maxDistance, mask, QueryTriggerInteraction.Ignore);
+        RaycastHit[] hits = raycastBuffer;
+        // Saturation must not let an omitted nearby wall become a shot through scenery.
+        if (count == raycastBuffer.Length)
+        {
+            hits = Physics.RaycastAll(ray, maxDistance, mask, QueryTriggerInteraction.Ignore);
+            count = hits.Length;
+        }
+        closest = default;
+        float distance = float.PositiveInfinity;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = hits[i].collider;
+            if (!collider || (player && collider.transform.IsChildOf(player.transform))) continue;
+            if (hits[i].distance >= distance) continue;
+            closest = hits[i];
+            distance = hits[i].distance;
+            found = true;
+        }
+        return found;
     }
 
-    void SaveCurrentState()
+    static bool IsHeadshot(RaycastHit hit, ZombieAI zombie)
     {
-        if (player == null || SaveSystem.instance == null) return;
-
-        int round = 1;
-        RoundManager rm = Object.FindFirstObjectByType<RoundManager>();
-        if (rm != null) round = rm.currentRound;
-
-        Vector3 pos = player.transform.position;
-
-        SaveSystem.instance.Save(
-            player.CurrentHP,
-            gunName,
-            currentAmmo,
-            reserveAmmo,
-            round,
-            pos
-        );
+        for (Transform bone = hit.collider.transform; bone && bone != zombie.transform; bone = bone.parent)
+            if (bone.name.IndexOf("head", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        // Existing zombies use a single capsule; its top 22% represents the head.
+        Bounds bounds = hit.collider.bounds;
+        return bounds.size.y > 0.3f && hit.point.y >= bounds.min.y + bounds.size.y * 0.78f;
     }
 
-    internal void InitNewGame()
+    public void AddReserveAmmo(int amount, bool refillMagazine = false)
     {
-        currentAmmo = magSize;
-        reserveAmmo = 120;
+        if (amount < 0) return;
+        if (refillMagazine)
+        {
+            CancelReload();
+            currentAmmo = Mathf.Max(1, magSize);
+        }
+        reserveAmmo = Mathf.Clamp(reserveAmmo + amount, 0, Mathf.Max(1, maxReserveAmmo));
+        RequestSave();
+    }
+
+    public void InitNewGame()
+    {
+        CancelReload();
+        currentAmmo = Mathf.Max(1, magSize);
+        reserveAmmo = initialReserveAmmo;
+        nextTimeToFire = 0f;
     }
 
     public void ApplyLoadedGun(string armaNome, int ammoMag, int ammoReserva)
     {
-        gunName = armaNome;
-        currentAmmo = ammoMag;
-        reserveAmmo = ammoReserva;
+        CancelReload();
+        if (!string.IsNullOrWhiteSpace(armaNome)) gunName = armaNome;
+        currentAmmo = Mathf.Clamp(ammoMag, 0, Mathf.Max(1, magSize));
+        reserveAmmo = Mathf.Clamp(ammoReserva, 0, Mathf.Max(1, maxReserveAmmo));
+    }
+
+    void RequestSave()
+    {
+        if (SaveSystem.instance != null && (!player || !player.IsDead)) SaveSystem.instance.RequestSave();
+    }
+
+    void OnDisable()
+    {
+        CancelReload();
+        IsAiming = false;
+        if (bulletTrail) bulletTrail.enabled = false;
+        if (playerCam) playerCam.fieldOfView = baseFieldOfView;
     }
 }

@@ -1,151 +1,177 @@
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
+// Pause and arsenal share one Escape handler, so a single press closes only one panel.
+[DefaultExecutionOrder(-10)]
 public class PauseMenu : MonoBehaviour
 {
     [Header("Panels")]
-    public GameObject pausePanel;     // PausePanel (Resume/Options/Exit)
-    public GameObject optionsPanel;   // PauseOptionsPanel (sliders/toggle/back)
-
-    [Header("Options UI (arrasta do teu options panel)")]
-    public Slider volumeSlider;          // 0..1
-    public Slider sensitivitySlider;     // ex: 50..300 (tu defines no Inspector)
+    public GameObject pausePanel;
+    public GameObject optionsPanel;
+    [Header("Options UI")]
+    public Slider volumeSlider;
+    public Slider sensitivitySlider;
     public Toggle fullscreenToggle;
-
     [Header("Scene")]
-    public string menuSceneName = "MainMenu"; // mete aqui o nome exato da cena do menu
-
+    public string menuSceneName = "MainMenu";
+    public bool IsPaused => isPaused;
     private bool isPaused;
+    private bool listenersRegistered;
+    private PlayerHealth player;
+    private MouseLook mouseLook;
+    private const string VOL_KEY = "opt_volume";
+    private const string SENS_KEY = "opt_sens";
+    private const string FULL_KEY = "opt_full";
 
-    const string VOL_KEY = "opt_volume";
-    const string SENS_KEY = "opt_sens";
-    const string FULL_KEY = "opt_full";
-
-    void Awake()
+    private void Awake()
     {
-        // garantir que começa fechado
-        if (pausePanel) pausePanel.SetActive(false);
-        if (optionsPanel) optionsPanel.SetActive(false);
-
+        if (pausePanel != null) pausePanel.SetActive(false);
+        if (optionsPanel != null) optionsPanel.SetActive(false);
         Time.timeScale = 1f;
-        isPaused = false;
     }
 
-    void Start()
+    private void Start()
     {
-        // Carregar prefs
-        float vol = PlayerPrefs.GetFloat(VOL_KEY, 1f);
-        float sens = PlayerPrefs.GetFloat(SENS_KEY, 100f);
-        bool full = PlayerPrefs.GetInt(FULL_KEY, Screen.fullScreen ? 1 : 0) == 1;
-
-        // Aplicar já
-        AudioListener.volume = Mathf.Clamp01(vol);
-        Screen.fullScreen = full;
-
-        // Meter valores na UI SEM disparar listeners (para evitar bugs)
-        if (volumeSlider)
+        player = FindFirstObjectByType<PlayerHealth>();
+        mouseLook = FindFirstObjectByType<MouseLook>();
+        float volume = Mathf.Clamp01(PlayerPrefs.GetFloat(VOL_KEY, 1f));
+        float sensitivity = Mathf.Clamp(PlayerPrefs.GetFloat(SENS_KEY, 100f), 1f, 500f);
+        bool fullscreen = PlayerPrefs.GetInt(FULL_KEY, Screen.fullScreen ? 1 : 0) == 1;
+        AudioListener.volume = volume;
+        Screen.fullScreen = fullscreen;
+        if (volumeSlider != null)
         {
-            volumeSlider.SetValueWithoutNotify(vol);
-            volumeSlider.onValueChanged.AddListener(OnVolumeChanged);
+            volumeSlider.SetValueWithoutNotify(volume);
+            if (!HasPersistentListener(volumeSlider.onValueChanged, this, nameof(OnVolumeChanged)))
+                volumeSlider.onValueChanged.AddListener(OnVolumeChanged);
         }
-
-        if (sensitivitySlider)
+        if (sensitivitySlider != null)
         {
-            sensitivitySlider.SetValueWithoutNotify(sens);
-            sensitivitySlider.onValueChanged.AddListener(OnSensitivityChanged);
+            sensitivitySlider.SetValueWithoutNotify(sensitivity);
+            if (!HasPersistentListener(sensitivitySlider.onValueChanged, this, nameof(OnSensitivityChanged)))
+                sensitivitySlider.onValueChanged.AddListener(OnSensitivityChanged);
         }
-
-        if (fullscreenToggle)
+        if (fullscreenToggle != null)
         {
-            fullscreenToggle.SetIsOnWithoutNotify(full);
-            fullscreenToggle.onValueChanged.AddListener(OnFullscreenChanged);
+            fullscreenToggle.SetIsOnWithoutNotify(fullscreen);
+            if (!HasPersistentListener(fullscreenToggle.onValueChanged, this, nameof(OnFullscreenChanged)))
+                fullscreenToggle.onValueChanged.AddListener(OnFullscreenChanged);
         }
+        listenersRegistered = true;
     }
 
-    void Update()
+    private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (GameOver()) return;
+        var session = SurvivalSession.Instance;
+        if (session != null && session.IsShopOpen)
         {
-            // Se estiver nas options, ESC volta ao pause panel
-            if (optionsPanel && optionsPanel.activeSelf)
-            {
-                BackFromOptions();
-                return;
-            }
-
-            if (isPaused) Resume();
-            else Pause();
+            if (Input.GetKeyDown(KeyCode.Escape)) session.CloseShop();
+            return;
         }
+        if (!Input.GetKeyDown(KeyCode.Escape)) return;
+        if (isPaused && optionsPanel != null && optionsPanel.activeSelf) BackFromOptions();
+        else if (isPaused) Resume();
+        else Pause();
+    }
+
+    private bool GameOver()
+    {
+        return (player != null && player.IsDead) ||
+            (SurvivalSession.Instance != null && SurvivalSession.Instance.IsGameOver);
     }
 
     public void Pause()
     {
+        if (GameOver() || (SurvivalSession.Instance != null && SurvivalSession.Instance.IsShopOpen)) return;
+        if (SaveSystem.instance != null) SaveSystem.instance.FlushSave();
         isPaused = true;
         Time.timeScale = 0f;
-
-        if (pausePanel) pausePanel.SetActive(true);
-        if (optionsPanel) optionsPanel.SetActive(false);
-
+        if (pausePanel != null) pausePanel.SetActive(true);
+        if (optionsPanel != null) optionsPanel.SetActive(false);
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
 
     public void Resume()
     {
+        if (GameOver()) return;
         isPaused = false;
         Time.timeScale = 1f;
-
-        if (pausePanel) pausePanel.SetActive(false);
-        if (optionsPanel) optionsPanel.SetActive(false);
-
+        if (pausePanel != null) pausePanel.SetActive(false);
+        if (optionsPanel != null) optionsPanel.SetActive(false);
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+        PlayerPrefs.Save();
     }
 
     public void OpenOptions()
     {
-        if (pausePanel) pausePanel.SetActive(false);
-        if (optionsPanel) optionsPanel.SetActive(true);
+        if (!isPaused || GameOver()) return;
+        if (pausePanel != null) pausePanel.SetActive(false);
+        if (optionsPanel != null) optionsPanel.SetActive(true);
     }
 
     public void BackFromOptions()
     {
-        if (optionsPanel) optionsPanel.SetActive(false);
-        if (pausePanel) pausePanel.SetActive(true);
+        if (GameOver()) return;
+        if (optionsPanel != null) optionsPanel.SetActive(false);
+        if (pausePanel != null) pausePanel.SetActive(true);
+        PlayerPrefs.Save();
     }
 
     public void ExitToMenu()
     {
+        if (SaveSystem.instance != null) SaveSystem.instance.FlushSave();
+        var rounds = FindFirstObjectByType<RoundManager>();
+        if (rounds != null) rounds.StopWaves();
+        PlayerPrefs.Save();
         Time.timeScale = 1f;
         isPaused = false;
-
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-
         SceneManager.LoadScene(menuSceneName);
     }
 
-    // -------- Options Handlers --------
-    public void OnVolumeChanged(float v)
+    public void OnVolumeChanged(float value)
     {
-        v = Mathf.Clamp01(v);
-        PlayerPrefs.SetFloat(VOL_KEY, v);
-        AudioListener.volume = v;
+        value = Mathf.Clamp01(value);
+        PlayerPrefs.SetFloat(VOL_KEY, value);
+        AudioListener.volume = value;
     }
 
-    public void OnSensitivityChanged(float s)
+    public void OnSensitivityChanged(float value)
     {
-        PlayerPrefs.SetFloat(SENS_KEY, s);
-
-        // opcional: atualizar já no MouseLook (se existir)
-        var ml = FindFirstObjectByType<MouseLook>();
-        if (ml != null) ml.mouseSensitivity = s;
+        value = Mathf.Clamp(value, 1f, 500f);
+        PlayerPrefs.SetFloat(SENS_KEY, value);
+        if (mouseLook != null) mouseLook.mouseSensitivity = value;
     }
 
-    public void OnFullscreenChanged(bool isFull)
+    public void OnFullscreenChanged(bool fullscreen)
     {
-        PlayerPrefs.SetInt(FULL_KEY, isFull ? 1 : 0);
-        Screen.fullScreen = isFull;
+        PlayerPrefs.SetInt(FULL_KEY, fullscreen ? 1 : 0);
+        Screen.fullScreen = fullscreen;
+    }
+
+    private void OnApplicationFocus(bool focused)
+    {
+        if (!focused && player != null && !isPaused && Time.timeScale > 0f) Pause();
+    }
+
+    private static bool HasPersistentListener(UnityEventBase events, Object target, string method)
+    {
+        for (int i = 0; i < events.GetPersistentEventCount(); i++)
+            if (events.GetPersistentTarget(i) == target && events.GetPersistentMethodName(i) == method) return true;
+        return false;
+    }
+
+    private void OnDestroy()
+    {
+        if (!listenersRegistered) return;
+        if (volumeSlider != null) volumeSlider.onValueChanged.RemoveListener(OnVolumeChanged);
+        if (sensitivitySlider != null) sensitivitySlider.onValueChanged.RemoveListener(OnSensitivityChanged);
+        if (fullscreenToggle != null) fullscreenToggle.onValueChanged.RemoveListener(OnFullscreenChanged);
     }
 }

@@ -8119,11 +8119,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94d0ce113fbcebe4897486599f45a19e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AmmoStation
-  giveReserveAmmo: 30
-  maxReserveAmmo: 120
+  giveReserveAmmo: 90
+  maxReserveAmmo: 300
   refillMagazine: 0
   useKey: 101
-  cooldown: 40
+  cooldown: 0.5
+  pointCost: 250
 --- !u!54 &307246431
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -22986,7 +22987,8 @@ MonoBehaviour:
   currentRound: 1
   zombiesPerRound: 5
   spawnRate: 1.5
-  intermissionTime: 30
+  intermissionTime: 12
+  initialPreparationTime: 8
   intermissionTimer: 0
   inIntermission: 0
   isGameStarting: 1
@@ -50288,7 +50290,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 115389e4b727cd04c8c3c804d05a85f2, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::loop
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieSpawner
   zombiePrefab: {fileID: 8417829596095260564, guid: 876968064fbe7fb4f9d44d6c26092bea, type: 3}
   spawnPoints:
   - {fileID: 502115315}
@@ -69441,7 +69443,7 @@ MonoBehaviour:
   damage: 15
   hitMask:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 4294967291
   magSize: 30
   reserveAmmo: 120
   currentAmmo: 0

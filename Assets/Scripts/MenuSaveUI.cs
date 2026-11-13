@@ -7,119 +7,79 @@ public class MenuSaveUI : MonoBehaviour
 {
     [Header("Scene")]
     [SerializeField] private string mainScene = "MainScene";
-
     [Header("UI")]
     [SerializeField] private Button loadButton;
-    [SerializeField] private GameObject deleteSaveButton;   // o botão ao lado do Load
-    [SerializeField] private TMP_Text saveNameText;         // texto ao lado do Load (opcional)
-
+    [SerializeField] private GameObject deleteSaveButton;
+    [SerializeField] private TMP_Text saveNameText;
     [Header("Name Panel")]
-    [SerializeField] private GameObject namePanel;          // painel para escrever o nome
-    [SerializeField] private TMP_InputField nameInput;      // input do nome
+    [SerializeField] private GameObject namePanel;
+    [SerializeField] private TMP_InputField nameInput;
     [SerializeField] private string defaultSaveName = "Save 1";
-
     private Database db;
 
-    void Start()
+    private void Start()
     {
         db = new Database();
-
-        if (namePanel) namePanel.SetActive(false);
+        if (namePanel != null) namePanel.SetActive(false);
         RefreshSaveUI();
     }
 
-    void RefreshSaveUI()
+    private void RefreshSaveUI()
     {
-        bool hasSave = db.HasSave(1);
-
-        if (loadButton) loadButton.interactable = hasSave;
-        if (deleteSaveButton) deleteSaveButton.SetActive(hasSave);
-
-        if (saveNameText)
-        {
-            if (hasSave)
-            {
-                string n = PlayerPrefs.GetString("save_name", defaultSaveName);
-                saveNameText.text = n;
-                saveNameText.gameObject.SetActive(true);
-            }
-            else
-            {
-                saveNameText.gameObject.SetActive(false);
-            }
-        }
+        if (db == null) db = new Database();
+        bool hasSave = db.HasSave();
+        if (loadButton != null) loadButton.interactable = hasSave;
+        if (deleteSaveButton != null) deleteSaveButton.SetActive(hasSave);
+        if (saveNameText == null) return;
+        saveNameText.gameObject.SetActive(hasSave);
+        if (hasSave) saveNameText.text = PlayerPrefs.GetString("save_name", defaultSaveName);
     }
 
-    // Botão Start Game -> abre painel para nome
     public void StartGameAskName()
     {
-        if (!namePanel) { StartGameWithName(defaultSaveName); return; }
-
+        if (namePanel == null) { StartGameWithName(defaultSaveName); return; }
         namePanel.SetActive(true);
-
-        if (nameInput)
-        {
-            string n = PlayerPrefs.GetString("save_name", defaultSaveName);
-            nameInput.text = n;
-            nameInput.Select();
-            nameInput.ActivateInputField();
-        }
+        if (nameInput == null) return;
+        nameInput.characterLimit = 32;
+        nameInput.text = PlayerPrefs.GetString("save_name", defaultSaveName);
+        nameInput.Select();
+        nameInput.ActivateInputField();
     }
 
-    // Botão Confirm dentro do painel
     public void ConfirmStartGame()
     {
-        string n = defaultSaveName;
-        if (nameInput)
-        {
-            string t = nameInput.text.Trim();
-            if (!string.IsNullOrEmpty(t)) n = t;
-        }
-
-        StartGameWithName(n);
+        string name = nameInput != null ? nameInput.text.Trim() : defaultSaveName;
+        StartGameWithName(string.IsNullOrEmpty(name) ? defaultSaveName : name);
     }
 
-    // Botão Cancel dentro do painel
     public void CancelStartGame()
-    {
-        if (namePanel) namePanel.SetActive(false);
-    }
+    { if (namePanel != null) namePanel.SetActive(false); }
 
-    void StartGameWithName(string saveName)
+    private void StartGameWithName(string saveName)
     {
+        SaveSystem.EnsureInstance().ResetForNewGame();
         PlayerPrefs.SetString("save_name", saveName);
-
-        // cria logo um save básico para o botão Load/Delete aparecerem no menu
-        GameState gs = new GameState
-        {
-            id = 1,
-            vida = 100,
-            arma_nome = "AK",
-            ammo_carregador = 30,
-            ammo_reserva = 120,
-            round = 1,
-            pos_x = 0f,
-            pos_y = 0f,
-            pos_z = 0f
-        };
-        db.SaveGame(gs);
-
         PlayerPrefs.SetInt("load", 0);
+        PlayerPrefs.Save();
+        // The first snapshot is captured from the actual player spawn by GameLoader.
         SceneManager.LoadScene(mainScene);
     }
 
     public void LoadGame()
     {
-        if (!db.HasSave(1)) return;
+        if (db == null) db = new Database();
+        if (!db.HasSave()) return;
         PlayerPrefs.SetInt("load", 1);
+        PlayerPrefs.Save();
         SceneManager.LoadScene(mainScene);
     }
 
     public void DeleteSave()
     {
-        db.DeleteSave(1);
+        SaveSystem.EnsureInstance().DeleteSave();
         PlayerPrefs.DeleteKey("save_name");
-        PlayerPrefs.SetInt("load", 0);
+        PlayerPrefs.DeleteKey("load");
+        PlayerPrefs.Save();
         RefreshSaveUI();
     }
 }

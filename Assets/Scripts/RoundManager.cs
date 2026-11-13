@@ -1,113 +1,170 @@
-using UnityEngine;
 using System.Collections;
+using UnityEngine;
 
+/// <summary>Owns one wave at a time, including its pending spawns.</summary>
 public class RoundManager : MonoBehaviour
 {
     [Header("Rounds")]
-    public int currentRound = 1;        // ronda atual
-    public int zombiesPerRound = 5;     // base
-    public float spawnRate = 1.5f;      // tempo entre spawns
+    [Min(1)] public int currentRound = 1;
+    [Min(1)] public int zombiesPerRound = 5;
+    [Min(0.1f)] public float spawnRate = 1.5f;
+    [Min(1)] public int maximumActiveZombies = 24;
+    [Min(0.1f)] public float minimumSpawnInterval = 0.35f;
+    [Min(1)] public int maximumSpawnFailures = 8;
 
-    [Header("Intervalo entre rondas / início")]
-    public float intermissionTime = 30f;    // segundos de pausa (entre rondas e no início)
-    [HideInInspector] public float intermissionTimer = 0f; // contador atual
-    [HideInInspector] public bool inIntermission = false;  // estamos na pausa?
-    [HideInInspector] public bool isGameStarting = true;   // true só na pausa inicial
+    [Header("Preparation")]
+    [Min(0f)] public float initialPreparationTime = 8f;
+    [Min(0f)] public float intermissionTime = 12f;
+    [HideInInspector] public float intermissionTimer;
+    [HideInInspector] public bool inIntermission;
+    [HideInInspector] public bool isGameStarting = true;
 
     [Header("References")]
-    public ZombieSpawner spawner;       // referência ao spawner
+    public ZombieSpawner spawner;
 
-    private int zombiesSpawned = 0;     // zombies spawnados na ronda
-    private int zombiesAlive = 0;       // zombies vivos na ronda
+    public int ZombiesAlive => zombiesAlive;
+    public int ZombiesRemaining => zombiesAlive + pendingSpawns;
+    public bool IsSpawning { get; private set; }
+    public bool HasSpawnError { get; private set; }
+    public bool IsStopped => stopped;
 
+    private int zombiesAlive;
+    private int zombiesSpawned;
+    private int pendingSpawns;
+    private bool waveStarted;
+    private bool stopped;
+    private Coroutine spawnRoutine;
+    private PlayerHealth player;
 
-    void Start()
+    private void Start()
     {
-        // Em vez de começar logo a ronda, começamos com uma pausa de 30s
+        if (spawner == null) spawner = FindFirstObjectByType<ZombieSpawner>();
+        player = FindFirstObjectByType<PlayerHealth>();
+        currentRound = Mathf.Max(1, currentRound);
         inIntermission = true;
         isGameStarting = true;
-        intermissionTimer = intermissionTime;
-        Debug.Log("Jogo começa em " + intermissionTime + " segundos");
+        intermissionTimer = Mathf.Max(0f, initialPreparationTime);
     }
 
-    void Update()
+    private void Update()
     {
-        // Se estamos na pausa (início ou entre rondas), conta o tempo para baixo
+        if (stopped || Time.timeScale <= 0f || (player != null && player.IsDead)) return;
+        if (SurvivalSession.Instance != null && SurvivalSession.Instance.IsGameOver) return;
+
         if (inIntermission)
         {
-            intermissionTimer -= Time.deltaTime;
-
-            if (intermissionTimer <= 0f)
-            {
-                inIntermission = false;
-                StartRound();
-            }
+            intermissionTimer = Mathf.Max(0f, intermissionTimer - Time.deltaTime);
+            if (intermissionTimer <= 0f) StartRound();
         }
     }
 
-    void StartRound()
+    private void StartRound()
     {
-        Debug.Log("===== RONDA " + currentRound + " =====");
+        if (stopped || IsSpawning || zombiesAlive > 0) return;
+        if (spawner == null || !spawner.IsConfigured)
+        {
+            BlockSpawning("Configure a zombie prefab and at least one spawn point.");
+            return;
+        }
 
-        // a partir daqui já não é "início de jogo"
-        if (isGameStarting)
-            isGameStarting = false;
-
+        inIntermission = false;
+        isGameStarting = false;
+        HasSpawnError = false;
+        waveStarted = true;
         zombiesSpawned = 0;
         zombiesAlive = 0;
-
-        // A tua fórmula original
-        int totalZombies = zombiesPerRound + (currentRound * 5);
-
-        StartCoroutine(SpawnWave(totalZombies));
+        pendingSpawns = GetWaveSize(currentRound, zombiesPerRound);
+        IsSpawning = true;
+        spawnRoutine = StartCoroutine(SpawnWave());
     }
 
-    IEnumerator SpawnWave(int totalZombies)
+    // A bounded curve keeps later waves playable without spawning thousands of objects.
+    public static int GetWaveSize(int round, int baseCount)
     {
-        for (int i = 1; i <= totalZombies; i++)
+        return Mathf.Clamp(Mathf.Clamp(baseCount, 1, 250) + Mathf.Clamp(round, 1, 1000) * 5, 1, 250);
+    }
+
+    private IEnumerator SpawnWave()
+    {
+        int consecutiveFailures = 0;
+        while (pendingSpawns > 0 && !stopped)
         {
-            if (spawner == null)
-            {
-                Debug.LogWarning("RoundManager: Spawner não ligado no Inspector!");
-                yield return new WaitForSeconds(spawnRate);
-                continue;
-            }
+            // Wait, rather than dropping the rest of a wave when the active cap is reached.
+            while (!stopped && (Time.timeScale <= 0f || zombiesAlive >= Mathf.Max(1, maximumActiveZombies)))
+                yield return null;
+            if (stopped) yield break;
 
-            bool spawned = spawner.SpawnZombie(currentRound);
-
-            if (spawned)
+            if (spawner != null && spawner.SpawnZombie(currentRound, this))
             {
+                pendingSpawns--;
                 zombiesSpawned++;
                 zombiesAlive++;
+                consecutiveFailures = 0;
             }
-            else
+            else if (++consecutiveFailures >= Mathf.Max(1, maximumSpawnFailures))
             {
-                // opcional: não incrementa vivos, para não bloquear ronda
+                BlockSpawning("No reachable zombie spawn positions were found. Check the baked NavMesh and spawn points.");
+                yield break;
             }
 
-            yield return new WaitForSeconds(spawnRate);
+            float interval = Mathf.Max(minimumSpawnInterval, spawnRate * Mathf.Pow(0.96f, Mathf.Clamp(currentRound - 1, 0, 100)));
+            yield return new WaitForSeconds(Mathf.Max(0.1f, interval));
         }
 
-        Debug.Log("Total de zumbis na ronda " + currentRound + ": " + totalZombies);
+        IsSpawning = false;
+        spawnRoutine = null;
+        TryCompleteRound();
     }
-
 
     public void ZombieDied()
     {
+        if (stopped || !waveStarted || zombiesAlive <= 0) return;
         zombiesAlive--;
+        TryCompleteRound();
+    }
 
-        if (zombiesAlive == 0 && !inIntermission) // ronda completa
-        {
-            Debug.Log("RONDA " + currentRound + " COMPLETA!");
+    private void TryCompleteRound()
+    {
+        // Living count alone is insufficient: early kills must not complete a spawning wave.
+        if (stopped || !waveStarted || inIntermission || IsSpawning || pendingSpawns > 0 || zombiesAlive > 0) return;
+        waveStarted = false;
+        int completedRound = currentRound;
+        currentRound++;
+        inIntermission = true;
+        intermissionTimer = Mathf.Max(0f, intermissionTime);
+        if (SurvivalSession.Instance != null) SurvivalSession.Instance.OnRoundCompleted(completedRound);
+    }
 
-            // ativa intervalo de preparação
-            inIntermission = true;
-            intermissionTimer = intermissionTime;
+    public void SkipIntermission()
+    {
+        if (!stopped && inIntermission && !HasSpawnError) intermissionTimer = 0f;
+    }
 
-            Debug.Log("Próxima ronda: " + (currentRound + 1) + " em " + intermissionTime + " segundos");
+    /// <summary>Stops new spawns immediately when the run ends.</summary>
+    public void StopWaves()
+    {
+        stopped = true;
+        inIntermission = false;
+        IsSpawning = false;
+        pendingSpawns = 0;
+        if (spawnRoutine != null) StopCoroutine(spawnRoutine);
+        spawnRoutine = null;
+    }
 
-            // sobe o número da próxima ronda; ela começa quando o timer chegar a 0
-            currentRound++;
-        }
+    private void BlockSpawning(string reason)
+    {
+        // Do not award points or endlessly advance empty waves after a configuration error.
+        HasSpawnError = true;
+        stopped = true;
+        IsSpawning = false;
+        inIntermission = false;
+        pendingSpawns = 0;
+        spawnRoutine = null;
+        Debug.LogError("RoundManager: " + reason, this);
+    }
+
+    private void OnDisable()
+    {
+        StopWaves();
     }
 }
