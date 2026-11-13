@@ -28,7 +28,7 @@ public class GameLoader : MonoBehaviour
         if (loaded)
         {
             // Open saved checkpoints and restore power before validating saved position.
-            if (world != null) world.RestoreProgress(state.unlocked_zones, state.power_enabled != 0);
+            if (world != null) world.RestoreProgress(state.unlocked_zones, state.power_enabled != 0, state.round);
             if (session != null) session.ApplySavedProgress(state);
             int healthBonus = session != null ? session.HealthBonus : Mathf.Clamp(state.health_bonus, 0, 100);
             if (health != null) health.ApplyLoadedHealth(state.vida, health.MaxHP + healthBonus);

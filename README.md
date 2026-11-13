@@ -45,23 +45,27 @@ O arsenal abre durante os 12 segundos entre rondas:
 | Fortitude | 2000 por melhoria | +50 vida máxima, até duas melhorias |
 | Recarga rápida | 1500 | Recarga 35% mais rápida |
 
-Os zombies ganham vida e velocidade com as rondas. Existem no máximo 24 ativos simultaneamente;
+Os zombies ganham vida e velocidade com as rondas. A primeira onda tem 12 inimigos; existem no máximo 28 ativos simultaneamente;
 os restantes ficam por gerar, sem desaparecerem da quota da ronda.
-Depois de 5 segundos sem sofrer dano, a vida regenera gradualmente.
+Depois de 6,5 segundos sem sofrer dano, a vida regenera a 8 pontos por segundo. Headshots causam **5× dano**.
 O HUD mostra vida, stamina, munições, recarga, pontos, inimigos restantes e confirmação de acerto/headshot.
 
 ## Objetivos no mapa
 
-O mapa original ganha postos físicos, sinalização e orientação no HUD:
+O mapa original fica dividido por **vedações visíveis e portões com colisão e bloqueio de NavMesh**:
 
-1. **Reclama o pátio da igreja por 750 pontos**, junto ao acesso da igreja. Desbloqueia o terminal do arsenal.
-2. **Ativa a energia no posto de guarda por 1250 pontos**. A energia permite usar as melhorias.
-3. Usa **E** a olhar para os postos: arsenal na igreja e Fortitude/Recarga Rápida junto ao posto de guarda.
+1. Começas num pátio fechado a sul da entrada da igreja.
+2. **Igreja: ronda 3**, ou abre antes por **750 pontos** com E no portão assinalado.
+3. **Vila: ronda 5**, ou abre antes por **1250 pontos**, depois da igreja.
+4. **Saídas para o resto do mapa: ronda 8**. Os portões interiores continuam utilizáveis.
+5. Na vila, **liga a energia no posto de guarda por 1250 pontos**. É uma compra separada dos portões e permite usar as melhorias.
+6. Usa **E** nos postos: arsenal na igreja e Fortitude/Recarga Rápida junto ao posto de guarda.
 
 O reabastecimento inicial fica perto do ponto de partida: **500 pontos** enchem carregador e reserva.
 O antigo placeholder de reabastecimento é substituído por equipamento visível, mantendo o local.
 O arsenal de **B** continua disponível entre rondas, com os mesmos requisitos de igreja/energia.
-Os objetivos desbloqueiam serviços; não criam paredes invisíveis nem substituem o cenário por uma arena nova.
+Os inimigos surgem em posições navegáveis de todas as direções das áreas abertas, com caminho até ao jogador.
+As zonas fechadas ficam excluídas do spawn; a distância e a visibilidade limitam aparecimentos à tua frente.
 
 ## Power-ups, animações e visual
 
@@ -70,12 +74,14 @@ Aproxima-te para recolher. Os efeitos e a expiração do objeto ficam suspensos 
 O HUD mostra a duração; os efeitos temporários não são guardados ao sair.
 
 A arma tem movimento de marcha/corrida, mira alinhada com o modelo, recoil e recarga por fases com movimento do carregador.
-Os zombies usam corrida, reação a ferimentos e duas mortes, com velocidade de passada ajustada ao movimento.
-Foram corrigidas a referência da animação de morte e a remoção demasiado precoce do corpo.
+Existem quatro prefabs de inimigo com comportamentos próprios: **infetado**, **corredor** (ronda 2),
+**cuspidor de ácido** (ronda 3) e **brutamontes** (ronda 5). Usam três conjuntos de texturas originais,
+proporções diferentes e equipamento adicional no brutamontes/cuspidor; partilham o rig original.
+Na morte, o Animator desliga e o esqueleto cai com física; o corpo permanece no chão antes de afundar e ser removido.
 
-A atmosfera mantém os assets do mapa e usa luz fria legível, contraste quente nos objetivos,
-nevoeiro de distância, poeira discreta e vento subtil. Estas alterações aparecem **ao entrar em Play**.
-Em **Opções**, ativa **Movimento reduzido da arma** para reduzir bob/sway e movimento dos power-ups e desligar a poeira.
+A atmosfera mantém a direção da luz original, nevoeiro mais distante e vento subtil. Foram retiradas as luzes
+adicionais dos landmarks e a poeira procedural. As pequenas luzes dos postos identificam o seu estado.
+Estas alterações aparecem **ao entrar em Play**. Em **Opções**, ativa **Movimento reduzido da arma** para reduzir bob/sway e movimento dos power-ups.
 
 ## Guardar e continuar
 
@@ -85,6 +91,8 @@ Continuar restaura vida, posição válida, arma, munições, ronda, pontos, eli
 **a ronda atual recomeça com uma nova onda completa**. Uma posição inválida conserva o ponto inicial do mapa.
 Uma morte termina a partida e elimina a recuperação; os recordes de ronda e eliminações permanecem.
 Os saves anteriores são migrados automaticamente, acrescentando os campos de progressão.
+Para experimentar os portões todos fechados, escolhe **INICIAR JOGO**: continuar preserva as áreas já desbloqueadas
+e abre também as previstas para a ronda guardada.
 
 ## Desenvolvimento e validação
 
@@ -94,6 +102,8 @@ Os scripts antigos mantêm os campos e métodos usados pelas referências das ce
 
 Consulta [a revisão técnica e os testes de aceitação](Docs/REVISAO_E_VALIDACAO.md).
 Consulta também [o mapa de objetivos, as animações e a atmosfera](Docs/MAPA_ANIMACOES_E_ATMOSFERA.md).
+Os detalhes desta revisão estão em [zonas, variantes e mortes](Docs/ZONAS_E_VARIANTES.md).
+No Editor, **Tools → DEADLINE → Verificar zonas e variantes** verifica os assets importados; repete durante Play para verificar os portões com a física real.
 O harness em `Tools/Verification` testa a lógica fora do Unity e descreve os seus limites.
 Uma compilação Windows e um playtest no Editor continuam necessários para validar renderização,
 animações, áudio, navegação real e o equilíbrio final.

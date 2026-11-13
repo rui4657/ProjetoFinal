@@ -15,7 +15,7 @@ public class GunSystem : MonoBehaviour
     [Min(1f)] public float maxDistance = 100f;
     [Min(1)] public int damage = 20;
     public LayerMask hitMask = Physics.DefaultRaycastLayers;
-    [Min(1f)] public float headshotMultiplier = 2.5f;
+    [Min(5f)] public float headshotMultiplier = 5f;
     [Range(0f, 5f)] public float hipSpread = 0.85f;
     [Range(0f, 2f)] public float aimedSpread = 0.08f;
     [Range(0f, 5f)] public float recoil = 0.9f;
@@ -71,6 +71,7 @@ public class GunSystem : MonoBehaviour
 
     void Awake()
     {
+        headshotMultiplier = Mathf.Max(5f, headshotMultiplier);
         if (!playerCam) playerCam = Camera.main;
         if (!player) player = GetComponentInParent<PlayerHealth>();
         if (!player) player = FindFirstObjectByType<PlayerHealth>();
@@ -191,7 +192,7 @@ public class GunSystem : MonoBehaviour
                 int hitDamage = SurvivalSession.Instance != null && SurvivalSession.Instance.InstaKillActive
                     ? Mathf.Max(1, zombie.CurrentHealth)
                     : Mathf.Max(1, Mathf.RoundToInt(damage * multiplier * (headshot ? headshotMultiplier : 1f)));
-                zombie.TakeDamage(hitDamage, headshot);
+                zombie.TakeDamage(hitDamage, headshot, direction);
                 if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterHit(zombie.IsDead, headshot);
             }
             else
@@ -269,7 +270,7 @@ public class GunSystem : MonoBehaviour
         float multiplier = SurvivalSession.Instance != null ? SurvivalSession.Instance.DamageMultiplier : 1f;
         int hitDamage = SurvivalSession.Instance != null && SurvivalSession.Instance.InstaKillActive
             ? Mathf.Max(1, zombie.CurrentHealth) : Mathf.Max(1, Mathf.RoundToInt(meleeDamage * multiplier));
-        zombie.TakeDamage(hitDamage, false);
+        zombie.TakeDamage(hitDamage, false, ray.direction);
         if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterHit(zombie.IsDead, false, true);
         RequestSave();
         return true;
@@ -279,6 +280,7 @@ public class GunSystem : MonoBehaviour
     {
         for (Transform bone = hit.collider.transform; bone && bone != zombie.transform; bone = bone.parent)
             if (bone.name.IndexOf("head", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        if (zombie.HasHeadBone) return zombie.IsHeadHit(hit.point);
         // Existing zombies use a single capsule; its top 22% represents the head.
         Bounds bounds = hit.collider.bounds;
         return bounds.size.y > 0.3f && hit.point.y >= bounds.min.y + bounds.size.y * 0.78f;

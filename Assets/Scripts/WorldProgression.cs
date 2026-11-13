@@ -20,13 +20,16 @@ public sealed class WorldProgression : MonoBehaviour
     public bool ConsumedInteractionThisFrame => lastActivationFrame == Time.frameCount;
 
     // These are authored landmark coordinates, not a replacement procedural arena.
-    private static readonly Vector3 AuthoredSpawn = new Vector3(445.367f, 17.83f, 563.14f);
+    private static readonly Vector3 AuthoredSpawn = new Vector3(445.367f, 17.83f, 555.5f);
     private static readonly Vector3 ChurchGate = new Vector3(455.9676f, 17.13f, 563.28f);
     private static readonly Vector3 GuardHouse = new Vector3(466.3704f, 17.99245f, 521.0355f);
     private readonly List<WorldInteraction> stations = new List<WorldInteraction>();
     private PlayerHealth player;
     private Camera view;
     private WorldInteraction focused, activeInteraction, church, generator, arsenal, fortitude, quickReload;
+    private WorldInteraction villageDoor, outskirtsDoor;
+    private QuarantineZones perimeter;
+    public Vector3 ZoneOffset => SafeSpawn - AuthoredSpawn;
     private int lastActivationFrame = -1;
     private bool built;
     private bool hasNavigation;
@@ -37,8 +40,10 @@ public sealed class WorldProgression : MonoBehaviour
         get
         {
             if (ProgressionUnavailable) return "ARSENAL [B] DISPONÍVEL ENTRE RONDAS";
-            if ((UnlockedZones & ChurchZone) == 0) return "RECLAMA O PÁTIO DA IGREJA · 750 PONTOS";
+            if ((UnlockedZones & ChurchZone) == 0) return "IGREJA FECHADA · RONDA 3 OU PORTÃO 750 PTS";
+            if ((UnlockedZones & GuardZone) == 0) return "VILA FECHADA · RONDA 5 OU PORTÃO 1250 PTS";
             if (!PowerEnabled) return "LIGA A ENERGIA NO POSTO DE GUARDA · 1250 PONTOS";
+            if ((UnlockedZones & QuarantineRules.Outskirts) == 0) return "SAÍDAS DO SECTOR · ABREM NA RONDA 8";
             var session = SurvivalSession.Instance;
             if (session != null && session.WeaponTier < 3)
                 return arsenal == null ? "MELHORA A ARMA · [B] ENTRE RONDAS"
@@ -57,7 +62,9 @@ public sealed class WorldProgression : MonoBehaviour
         {
             if (ProgressionUnavailable) return null;
             if ((UnlockedZones & ChurchZone) == 0) return church;
+            if ((UnlockedZones & GuardZone) == 0) return villageDoor;
             if (!PowerEnabled) return generator;
+            if ((UnlockedZones & QuarantineRules.Outskirts) == 0) return outskirtsDoor;
             var session = SurvivalSession.Instance;
             if (session == null) return null;
             if (session.WeaponTier < 3) return arsenal;
@@ -93,20 +100,26 @@ public sealed class WorldProgression : MonoBehaviour
 
     private void Start() => BuildWorld();
 
-    public void RestoreProgress(int zones, bool power)
+    public void RestoreProgress(int zones, bool power, int round = 1)
     {
-        UnlockedZones = Mathf.Max(0, zones) & (ChurchZone | GuardZone);
-        PowerEnabled = power || (UnlockedZones & GuardZone) != 0;
-        if (PowerEnabled) UnlockedZones |= GuardZone;
+        UnlockedZones = QuarantineRules.ForRound(zones, round);
+        PowerEnabled = power;
+        if (PowerEnabled) UnlockedZones = QuarantineRules.Normalize(UnlockedZones | GuardZone);
+        if (perimeter != null) perimeter.ApplyProgress(UnlockedZones);
         nextPresentation = 0f;
     }
 
-    /// <summary>Checkpoints unlock services, not invisible walls across the authored zombie routes.</summary>
+    public bool IsInsideOpenArea(Vector3 position)
+    {
+        Vector3 mapped = position - ZoneOffset;
+        return IsFinite(position) && QuarantineRules.Contains(mapped.x, mapped.z, UnlockedZones, .08f);
+    }
+
     public bool IsPositionAllowed(Vector3 position)
     {
-        if (!IsFinite(position)) return false;
+        if (!IsFinite(position) || !IsInsideOpenArea(position)) return false;
         Vector3 delta = position - SafeSpawn;
-        if (delta.x * delta.x + delta.z * delta.z > 220f * 220f || Mathf.Abs(delta.y) > 60f) return false;
+        if ((UnlockedZones & QuarantineRules.Outskirts) == 0 && (delta.x * delta.x + delta.z * delta.z > 600f * 600f || Mathf.Abs(delta.y) > 150f)) return false;
         if (!hasNavigation) return true;
         if (!NavMesh.SamplePosition(position, out NavMeshHit hit, 3f, NavMesh.AllAreas)) return false;
         Vector3 error = position - hit.position;
@@ -127,6 +140,18 @@ public sealed class WorldProgression : MonoBehaviour
     private void Update()
     {
         var session = SurvivalSession.Instance;
+        if (session != null && session.Rounds != null)
+        {
+            int next = QuarantineRules.ForRound(UnlockedZones, session.Rounds.currentRound);
+            if (next != UnlockedZones)
+            {
+                UnlockedZones = next;
+                if (perimeter != null) perimeter.ApplyProgress(UnlockedZones);
+                session.ShowMessage((next & QuarantineRules.Outskirts) != 0 ? "SAÍDAS ABERTAS · TODO O MAPA DISPONÍVEL"
+                    : (next & GuardZone) != 0 ? "PORTÕES DA VILA ABERTOS" : "PORTÕES DA IGREJA ABERTOS", 4f);
+                SaveProgress();
+            }
+        }
         if (!IsPlaying(session)) { focused = null; return; }
         focused = FindFocus();
         if (focused != null)
@@ -145,6 +170,9 @@ public sealed class WorldProgression : MonoBehaviour
                     : station.Kind == WorldInteraction.InteractionKind.GuardCheckpoint && PowerEnabled;
                 bool checkpoint = station.Kind == WorldInteraction.InteractionKind.ChurchCheckpoint
                     || station.Kind == WorldInteraction.InteractionKind.GuardCheckpoint;
+                if (station.Kind == WorldInteraction.InteractionKind.ChurchGate) { checkpoint = true; complete = (UnlockedZones & ChurchZone) != 0; }
+                if (station.Kind == WorldInteraction.InteractionKind.VillageGate) { checkpoint = true; complete = (UnlockedZones & GuardZone) != 0; }
+                if (station.Kind == WorldInteraction.InteractionKind.OutskirtsGate) { checkpoint = true; complete = (UnlockedZones & QuarantineRules.Outskirts) != 0; }
                 station.RefreshPresentation(Detail(station), !checkpoint && ServiceUnlocked(station), complete, station == focused);
             }
         }
@@ -161,20 +189,32 @@ public sealed class WorldProgression : MonoBehaviour
             session.ShowMessage("Os postos estão indisponíveis nesta partida. Usa [B] entre rondas.");
             return false;
         }
-        if (station.Kind == WorldInteraction.InteractionKind.ChurchCheckpoint)
+        if (station.Kind == WorldInteraction.InteractionKind.OutskirtsGate)
+        { session.ShowMessage((UnlockedZones & QuarantineRules.Outskirts) != 0 ? "SAÍDA ABERTA" : "ESTA SAÍDA ABRE NA RONDA 8"); return false; }
+        if (station.Kind == WorldInteraction.InteractionKind.VillageGate)
+        {
+            if ((UnlockedZones & GuardZone) != 0) { session.ShowMessage("O portão já está aberto."); return false; }
+            if ((UnlockedZones & ChurchZone) == 0) { session.ShowMessage("Abre primeiro o acesso à igreja."); return false; }
+            if (!session.TrySpend(1250)) return false;
+            UnlockedZones = QuarantineRules.Normalize(UnlockedZones | GuardZone);
+            if (perimeter != null) perimeter.ApplyProgress(UnlockedZones);
+            session.ShowMessage("ACESSO À VILA ABERTO"); SaveProgress(); return true;
+        }
+        if (station.Kind == WorldInteraction.InteractionKind.ChurchCheckpoint || station.Kind == WorldInteraction.InteractionKind.ChurchGate)
         {
             if ((UnlockedZones & ChurchZone) != 0) { session.ShowMessage("O pátio da igreja já está reclamado."); return false; }
             if (!session.TrySpend(ChurchCost)) return false;
             UnlockedZones |= ChurchZone;
-            session.ShowMessage("PÁTIO RECLAMADO · ARSENAL LOCALIZADO. FALTA LIGAR A ENERGIA.", 5f);
+            if (perimeter != null) perimeter.ApplyProgress(UnlockedZones);
+            session.ShowMessage("PORTÃO DA IGREJA ABERTO", 4f);
             SaveProgress();
             return true;
         }
         if (station.Kind == WorldInteraction.InteractionKind.GuardCheckpoint)
         {
+            if ((UnlockedZones & GuardZone) == 0) { session.ShowMessage("O posto de guarda fica na zona da vila. Abre o portão primeiro."); return false; }
             if (PowerEnabled) { session.ShowMessage("A energia já está ligada."); return false; }
             if (!session.TrySpend(PowerCost)) return false;
-            UnlockedZones |= GuardZone;
             PowerEnabled = true;
             session.ShowMessage("ENERGIA RESTABELECIDA · ARSENAL E VANTAGENS DISPONÍVEIS.", 5f);
             SaveProgress();
@@ -217,6 +257,7 @@ public sealed class WorldProgression : MonoBehaviour
     private bool CanReach(WorldInteraction station)
     {
         if (station == null || station.Owner != this || !station.isActiveAndEnabled || player == null || view == null) return false;
+        if (!IsInsideOpenArea(player.transform.position)) return false;
         Vector3 offset = station.FocusPoint - view.transform.position;
         float distance = offset.magnitude;
         if (distance > station.InteractionRange || distance < 0.01f) return false;
@@ -251,6 +292,9 @@ public sealed class WorldProgression : MonoBehaviour
         var session = SurvivalSession.Instance;
         switch (station.Kind)
         {
+            case WorldInteraction.InteractionKind.ChurchGate: return (UnlockedZones & ChurchZone) != 0 ? "ABERTO" : "750 PTS · AUTOMÁTICO NA RONDA 3";
+            case WorldInteraction.InteractionKind.VillageGate: return (UnlockedZones & GuardZone) != 0 ? "ABERTO" : "1250 PTS · AUTOMÁTICO NA RONDA 5";
+            case WorldInteraction.InteractionKind.OutskirtsGate: return (UnlockedZones & QuarantineRules.Outskirts) != 0 ? "ABERTO" : "ABRE NA RONDA 8";
             case WorldInteraction.InteractionKind.ChurchCheckpoint:
                 return ProgressionUnavailable ? "USA [B] ENTRE RONDAS" : (UnlockedZones & ChurchZone) != 0 ? "PÁTIO RECLAMADO" : "750 PONTOS";
             case WorldInteraction.InteractionKind.GuardCheckpoint:
@@ -287,8 +331,6 @@ public sealed class WorldProgression : MonoBehaviour
         built = true;
         Vector3 gate = Landmark("Struct_Fence1_Gate_A", ChurchGate);
         Vector3 guard = Landmark("GuardHouse", GuardHouse);
-        church = Place("Controlo do pátio", WorldInteraction.InteractionKind.ChurchCheckpoint,
-            "PÁTIO DA IGREJA", gate + new Vector3(-2f, 0f, -2.25f), "FieldCabinet");
         arsenal = Place("Arsenal da igreja", WorldInteraction.InteractionKind.WeaponUpgrade,
             "ARSENAL", gate + new Vector3(2.3f, 0f, 2.2f), "FieldWorkbench");
         generator = Place("Gerador do posto", WorldInteraction.InteractionKind.GuardCheckpoint,
@@ -311,6 +353,11 @@ public sealed class WorldProgression : MonoBehaviour
         }
         Place("Reabastecimento inicial", WorldInteraction.InteractionKind.Ammo,
             "REABASTECIMENTO", SafeSpawn + new Vector3(-3f, -1f, 3f), "FieldCabinet");
+        // Place services before carving the closed gates, then make each district physically inaccessible.
+        perimeter = QuarantineZones.Create(this);
+        church = perimeter.PortalFor(ChurchZone);
+        villageDoor = perimeter.PortalFor(GuardZone);
+        outskirtsDoor = perimeter.PortalFor(QuarantineRules.Outskirts);
     }
 
     private WorldInteraction Place(string name, WorldInteraction.InteractionKind kind, string title,

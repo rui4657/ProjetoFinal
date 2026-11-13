@@ -13,8 +13,8 @@ public class PlayerHealth : MonoBehaviour
     public event Action<int> Damaged;
 
     [Header("Regeneração")]
-    [Min(0f)] public float regenerationDelay = 5f;
-    [Min(0f)] public float regenerationPerSecond = 12f;
+    [Min(0f)] public float regenerationDelay = 6.5f;
+    [Min(0f)] public float regenerationPerSecond = 8f;
 
     [Header("Game Over")]
     [SerializeField] private string menuSceneName = "MainMenu";

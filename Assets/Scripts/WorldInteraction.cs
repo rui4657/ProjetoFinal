@@ -6,7 +6,7 @@ public enum WorldService { Ammo, WeaponUpgrade, HealthUpgrade, QuickReload }
 /// <summary>A physical point of interest. Input is owned by WorldProgression, never by each station.</summary>
 public sealed class WorldInteraction : MonoBehaviour
 {
-    public enum InteractionKind { ChurchCheckpoint, GuardCheckpoint, Ammo, WeaponUpgrade, HealthUpgrade, QuickReload }
+    public enum InteractionKind { ChurchCheckpoint, GuardCheckpoint, Ammo, WeaponUpgrade, HealthUpgrade, QuickReload, ChurchGate, VillageGate, OutskirtsGate }
 
     public WorldProgression Owner { get; private set; }
     public InteractionKind Kind { get; private set; }
@@ -108,7 +108,12 @@ public sealed class WorldInteraction : MonoBehaviour
             screen.color = color * 0.3f;
             screen.SetColor("_EmissionColor", color * (focused ? 2.2f : 1.1f));
         }
-        if (statusLight != null) { statusLight.color = color; statusLight.intensity = focused ? 1.35f : 0.65f; }
+        if (statusLight != null)
+        {
+            statusLight.color = color; statusLight.intensity = focused ? .7f : .25f;
+            var player = SurvivalSession.Instance != null ? SurvivalSession.Instance.Player : null;
+            statusLight.enabled = player != null && (player.transform.position - transform.position).sqrMagnitude < 100;
+        }
         if (lever != null)
             lever.localRotation = Quaternion.Slerp(lever.localRotation, Quaternion.Euler(completed ? -35 : 35, 0, 0),
                 1f - Mathf.Exp(-8f * Time.unscaledDeltaTime));
