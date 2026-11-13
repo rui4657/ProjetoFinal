@@ -14,3 +14,5 @@
 .DS_Store
 Thumbs.db
 /My project/
+__pycache__/
+*.pyc

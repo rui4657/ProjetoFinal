@@ -1,6 +1,6 @@
 # Verificação sem Editor Unity
 
-Este harness compila **os scripts reais do projeto** com Roslyn e executa 34 cenários de regressão. Não precisa de NuGet nem inclui dependências binárias novas.
+Este harness compila **os scripts reais do projeto** com Roslyn e executa 60 cenários de regressão. Não precisa de NuGet nem inclui dependências binárias novas.
 
 Requisitos: Python 3, .NET SDK 8 ou superior e SQLite 3 nativo. Foi executado em Debian Linux; o runner também prevê a DLL SQLite x64 já existente no projeto para Windows, mas esse caminho não foi testado aqui.
 
@@ -17,8 +17,8 @@ Os assemblies e bases de dados de teste são criados numa pasta temporária e ap
 ## O que é verificado
 
 - **Waves — 9 cenários:** morte antes do fim dos spawns; conclusão exata de uma ronda; mortes duplicadas; limite de zombies ativos sem descartar a fila; falhas de spawn limitadas; configuração ausente; pausa; fim da partida; limites da curva de dificuldade.
-- **Database — 9 cenários:** SQLite real, DLL real e `Database.cs`/`GameState.cs` reais; criação do schema sem inventar um save; snapshot completo; migrações dos formatos antigos de cinco e nove colunas; migrações repetidas; nomes com SQL; posições decimais em cultura `pt-PT`; recusa de saves mortos; eliminação por slot; base de dados corrompida.
-- **Gameplay — 16 cenários:** compila todos os scripts próprios em `Assets/Scripts`; acertos/kills/headshots e pontos; custos negativos/insuficientes; saturação de pontos; compras só no arsenal entre rondas; custos crescentes e limites dos perks; munições; recarga e cancelamento; limites de saves; debounce sem adiamento infinito e snapshot mais recente; morte sem recriar recovery; reset; restauro central e consumo único da flag de load; ESC no arsenal nas duas ordens de Update; regeneração de vida com atraso e pausa.
+- **Database — 12 cenários:** SQLite real, DLL real e `Database.cs`/`GameState.cs` reais; criação do schema sem inventar um save; snapshots; migrações dos formatos antigos e do progresso de mundo/tempo; idempotência; parâmetros SQL; cultura `pt-PT`; saves mortos; eliminação por slot; dados corrompidos; tempo inválido e flags.
+- **Gameplay — 39 cenários:** compila todos os scripts próprios em `Assets/Scripts`; economia, limites e compras; munições/recarga; debounce; morte/reset/restauro; ESC e regeneração; buffs e pausa; limite/expiração/oclusão dos drops; gravação de checkpoints/tempo; compras físicas com proximidade/LOS e uma cobrança por E; requisitos de energia também no arsenal B; posição inválida; melee sem disparo simultâneo; preservação da pose da arma e curvas de recarga; stagger limitado e ataques entre pisos; morte única; migração do posto antigo; preferência de conforto; falhas de placement sem postos fictícios/softlock; objetivos que avançam para melhorias em falta.
 
 ## Limites
 

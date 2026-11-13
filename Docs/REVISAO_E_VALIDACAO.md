@@ -2,7 +2,7 @@
 
 ## Âmbito
 
-Revisão dos 20 scripts próprios, das cenas MainMenu e MainScene, do prefab de zombie usado pelo spawner,
+Revisão do código próprio, das cenas MainMenu e MainScene, do prefab de zombie usado pelo spawner,
 das referências de UI, do NavMesh e das configurações de input/build/renderização.
 Os assets de terceiros são preservados; não foi feita uma conversão do mapa ou do pipeline gráfico.
 
@@ -27,7 +27,7 @@ Os assets de terceiros são preservados; não foi feita uma conversão do mapa o
 - O HUD antigo é ocultado apenas no seu próprio ramo; os painéis de pausa continuam ativos.
 - O renderer continua Built-in. O pacote HDRP já existente não é ativado automaticamente.
 - Continuar reinicia a onda da ronda guardada, mantendo o progresso. Não serializa posições/vida individuais de cada zombie.
-- O tempo apresentado no fim é o da sessão atual; pontos e eliminações podem incluir uma partida continuada.
+- O tempo acumulado da partida, checkpoints e energia são preservados ao continuar; efeitos temporários ficam excluídos.
 - Os headshots usam a posição do acerto na parte superior da cápsula quando o modelo não possui collider próprio na cabeça.
 
 ## Verificação automatizada
@@ -37,7 +37,7 @@ testa métodos e coroutines reais com um relógio/scheduler controlado. A persis
 do projeto e SQLite nativo, incluindo migrações, cultura portuguesa, parâmetros e ficheiros inválidos.
 O README do harness explica os cenários e o comando de execução.
 
-Resultado desta revisão: **34 testes passaram** (9 de rondas, 9 de SQLite e 16 de integração de gameplay).
+Resultado atual: **60 testes passaram** (9 de rondas, 12 de SQLite e 39 de integração de gameplay).
 Uma verificação adicional confirmou o registo e o cast do drawer PostProcessing corrigido.
 
 Isto verifica lógica e contratos entre os scripts. **Não equivale a compilar ou executar o jogo no Unity:**
@@ -53,7 +53,7 @@ O ambiente usado para esta revisão não tem Unity Editor nem licença instalada
 5. Matar rapidamente o primeiro zombie antes do spawn seguinte: a ronda deve continuar até terminar toda a quota.
 6. Terminar duas ou mais rondas: verificar bónus, preparação12s, aumento de dificuldade e contador de inimigos.
 7. Abrir B durante a preparação; comprar cada melhoria com saldo suficiente e insuficiente. Fechar com B/Esc e confirmar que a pausa não abre por engano.
-8. Testar E no posto com reserva cheia, parcial e vazia; confirmar débito250 e limite300, sem múltiplas cobranças no mesmo toque.
+8. Testar E nos postos com reserva cheia, parcial e vazia; confirmar débito500 para reabastecimento completo e limite300, sem múltiplas cobranças no mesmo toque.
 9. Levar dano, evitar novo ataque por5s e observar a regeneração; pausar não deve avançar a recuperação ou ataques.
 10. Sair em vida e continuar: confirmar posição, vida máxima, arma, munições, pontos, melhorias e ronda.
 11. Morrer: nenhum movimento/disparo/spawn adicional, um único resumo, recuperação eliminada, retry começa novo com500 pontos.
@@ -62,6 +62,6 @@ O ambiente usado para esta revisão não tem Unity Editor nem licença instalada
 
 ## Próximos desenvolvimentos de conteúdo
 
-Esta revisão trabalha a base do ciclo de sobrevivência. Novas áreas com portas compráveis, armas distintas,
-power-ups no mapa, inimigos especiais, objetivos e equilíbrio de várias sessões devem ser construídos
-sobre esta base depois de validar o mapa e o comportamento real no Editor.
+Esta revisão inclui objetivos físicos, energia, power-ups e polimento de animações/atmosfera, descritos em
+[Mapa, animações e atmosfera](MAPA_ANIMACOES_E_ATMOSFERA.md). Novas áreas fechadas com portas compráveis,
+armas distintas e inimigos especiais continuam a depender de construção e equilíbrio adicionais no Editor.

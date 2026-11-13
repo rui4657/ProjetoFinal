@@ -17,6 +17,7 @@ public class SaveSystem : MonoBehaviour
     private float nextAutosave;
     private float nextWriteAllowed;
     private GameState legacySnapshot;
+    private bool saveWarningShown;
 
     public static SaveSystem EnsureInstance()
     {
@@ -45,6 +46,7 @@ public class SaveSystem : MonoBehaviour
         gameplayReady = false;
         dirty = false;
         legacySnapshot = null;
+        saveWarningShown = false;
     }
 
     public void BeginSession()
@@ -54,6 +56,7 @@ public class SaveSystem : MonoBehaviour
         rounds = FindFirstObjectByType<RoundManager>();
         gameplayReady = player != null && gun != null;
         nextAutosave = Time.unscaledTime + autosaveInterval;
+        if (gameplayReady && (db == null || !db.IsAvailable)) NotifySaveFailure();
         RequestSave();
     }
 
@@ -89,13 +92,24 @@ public class SaveSystem : MonoBehaviour
 
     public void FlushSave()
     {
-        if (db == null || Time.unscaledTime < nextWriteAllowed) return;
+        if (db == null || !db.IsAvailable)
+        {
+            if (gameplayReady || legacySnapshot != null) NotifySaveFailure();
+            dirty = false;
+            legacySnapshot = null;
+            return;
+        }
+        if (Time.unscaledTime < nextWriteAllowed) return;
         GameState state = CaptureSnapshot();
         if (state == null && gameplayReady) { dirty = false; legacySnapshot = null; return; }
         if (state == null) state = legacySnapshot;
         if (state == null || state.vida <= 0) return;
         if (db.SaveGame(state)) { dirty = false; legacySnapshot = null; }
-        else { nextWriteAllowed = Time.unscaledTime + 10f; }
+        else
+        {
+            nextWriteAllowed = Time.unscaledTime + 10f;
+            NotifySaveFailure();
+        }
     }
 
     private GameState CaptureSnapshot()
@@ -117,13 +131,29 @@ public class SaveSystem : MonoBehaviour
     private static void CopyProgress(GameState state)
     {
         var session = SurvivalSession.Instance;
-        if (session == null) return;
-        state.points = session.Points;
-        state.kills = session.Kills;
-        state.headshots = session.Headshots;
-        state.weapon_tier = session.WeaponTier;
-        state.health_bonus = session.HealthBonus;
-        state.reload_perk = session.HasQuickReload ? 1 : 0;
+        if (session != null)
+        {
+            state.points = session.Points;
+            state.kills = session.Kills;
+            state.headshots = session.Headshots;
+            state.weapon_tier = session.WeaponTier;
+            state.health_bonus = session.HealthBonus;
+            state.reload_perk = session.HasQuickReload ? 1 : 0;
+            state.elapsed_seconds = session.ElapsedSeconds;
+        }
+        var world = WorldProgression.Instance;
+        if (world != null)
+        {
+            state.unlocked_zones = world.UnlockedZones;
+            state.power_enabled = world.PowerEnabled ? 1 : 0;
+        }
+    }
+
+    private void NotifySaveFailure()
+    {
+        if (saveWarningShown || SurvivalSession.Instance == null) return;
+        saveWarningShown = true;
+        SurvivalSession.Instance.ShowMessage("Não foi possível guardar. Podes continuar a jogar.", 6f);
     }
 
     // Retained for existing Unity events and external scripts; writes are debounced.

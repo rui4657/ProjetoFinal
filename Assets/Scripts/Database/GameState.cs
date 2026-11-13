@@ -20,4 +20,7 @@ public class GameState
     public int weapon_tier;
     public int health_bonus;
     public int reload_perk;
+    public int unlocked_zones;
+    public int power_enabled;
+    public float elapsed_seconds;
 }

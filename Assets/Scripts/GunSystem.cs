@@ -20,6 +20,12 @@ public class GunSystem : MonoBehaviour
     [Range(0f, 2f)] public float aimedSpread = 0.08f;
     [Range(0f, 5f)] public float recoil = 0.9f;
 
+    [Header("Corpo a corpo")]
+    [Min(1)] public int meleeDamage = 75;
+    [Min(0.5f)] public float meleeRange = 2.1f;
+    [Range(0.05f, 0.5f)] public float meleeRadius = 0.2f;
+    [Min(0.2f)] public float meleeCooldown = 0.8f;
+
     [Header("Munição")]
     [Min(1)] public int magSize = 30;
     public int reserveAmmo = 120;
@@ -46,6 +52,8 @@ public class GunSystem : MonoBehaviour
 
     public bool IsReloading { get; private set; }
     public bool IsAiming { get; private set; }
+    public bool IsMeleeing => Time.time < meleeRecoveryUntil;
+    public WeaponViewMotion ViewMotion { get; private set; }
     public float ReloadProgress => IsReloading ? Mathf.Clamp01((Time.time - reloadStartedAt) / reloadDuration) : 0f;
 
     private readonly RaycastHit[] raycastBuffer = new RaycastHit[64];
@@ -58,6 +66,8 @@ public class GunSystem : MonoBehaviour
     private float trailExpiresAt;
     private float baseFieldOfView = 60f;
     private int initialReserveAmmo;
+    private float nextMeleeAt;
+    private float meleeRecoveryUntil;
 
     void Awake()
     {
@@ -79,6 +89,9 @@ public class GunSystem : MonoBehaviour
             bulletTrail.useWorldSpace = true;
             bulletTrail.enabled = false;
         }
+        ViewMotion = GetComponent<WeaponViewMotion>();
+        if (!ViewMotion) ViewMotion = gameObject.AddComponent<WeaponViewMotion>();
+        ViewMotion.Initialize(this);
     }
 
     void Update()
@@ -93,9 +106,10 @@ public class GunSystem : MonoBehaviour
             if (player && player.IsDead) CancelReload();
             return;
         }
-        IsAiming = !IsReloading && Input.GetMouseButton(1);
-        if (IsReloading) return;
-        if (Input.GetKeyDown(KeyCode.R) || (currentAmmo == 0 && reserveAmmo > 0))
+        if (Input.GetKeyDown(KeyCode.V)) TryMelee();
+        IsAiming = !IsReloading && !IsMeleeing && Input.GetMouseButton(1);
+        if (IsReloading || IsMeleeing) return;
+        if (Input.GetKeyDown(KeyCode.R) || (currentAmmo == 0 && reserveAmmo > 0 && !IsMeleeing))
         {
             BeginReload();
             return;
@@ -124,13 +138,14 @@ public class GunSystem : MonoBehaviour
         if (sfxSource && shotClip) sfxSource.PlayOneShot(shotClip, shotVolume);
         if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterShot();
         Shoot();
+        if (ViewMotion) ViewMotion.KickShot();
         if (mouseLook) mouseLook.AddRecoil(recoil * (IsAiming ? 0.6f : 1f), UnityEngine.Random.Range(-recoil, recoil) * 0.3f);
         RequestSave();
     }
 
     void BeginReload()
     {
-        if (IsReloading || reserveAmmo <= 0 || currentAmmo >= magSize) return;
+        if (IsReloading || IsMeleeing || reserveAmmo <= 0 || currentAmmo >= magSize) return;
         IsAiming = false;
         IsReloading = true;
         reloadStartedAt = Time.time;
@@ -173,7 +188,9 @@ public class GunSystem : MonoBehaviour
             {
                 bool headshot = IsHeadshot(hit, zombie);
                 float multiplier = SurvivalSession.Instance != null ? SurvivalSession.Instance.DamageMultiplier : 1f;
-                int hitDamage = Mathf.Max(1, Mathf.RoundToInt(damage * multiplier * (headshot ? headshotMultiplier : 1f)));
+                int hitDamage = SurvivalSession.Instance != null && SurvivalSession.Instance.InstaKillActive
+                    ? Mathf.Max(1, zombie.CurrentHealth)
+                    : Mathf.Max(1, Mathf.RoundToInt(damage * multiplier * (headshot ? headshotMultiplier : 1f)));
                 zombie.TakeDamage(hitDamage, headshot);
                 if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterHit(zombie.IsDead, headshot);
             }
@@ -199,14 +216,21 @@ public class GunSystem : MonoBehaviour
     }
 
     bool FindClosestHit(Ray ray, out RaycastHit closest)
+        => FindClosestHit(ray, maxDistance, 0f, out closest);
+
+    bool FindClosestHit(Ray ray, float distanceLimit, float radius, out RaycastHit closest)
     {
         int mask = hitMask.value == 0 ? Physics.DefaultRaycastLayers : hitMask.value;
-        int count = Physics.RaycastNonAlloc(ray, raycastBuffer, maxDistance, mask, QueryTriggerInteraction.Ignore);
+        int count = radius > 0f
+            ? Physics.SphereCastNonAlloc(ray, radius, raycastBuffer, distanceLimit, mask, QueryTriggerInteraction.Ignore)
+            : Physics.RaycastNonAlloc(ray, raycastBuffer, distanceLimit, mask, QueryTriggerInteraction.Ignore);
         RaycastHit[] hits = raycastBuffer;
         // Saturation must not let an omitted nearby wall become a shot through scenery.
         if (count == raycastBuffer.Length)
         {
-            hits = Physics.RaycastAll(ray, maxDistance, mask, QueryTriggerInteraction.Ignore);
+            hits = radius > 0f
+                ? Physics.SphereCastAll(ray, radius, distanceLimit, mask, QueryTriggerInteraction.Ignore)
+                : Physics.RaycastAll(ray, distanceLimit, mask, QueryTriggerInteraction.Ignore);
             count = hits.Length;
         }
         closest = default;
@@ -222,6 +246,33 @@ public class GunSystem : MonoBehaviour
             found = true;
         }
         return found;
+    }
+
+    public bool TryMelee()
+    {
+        if (!isActiveAndEnabled || !playerCam || Time.timeScale <= 0f || Time.time < nextMeleeAt
+            || (player && player.IsDead) || Cursor.lockState != CursorLockMode.Locked
+            || (SurvivalSession.Instance != null && SurvivalSession.Instance.IsGameOver)) return false;
+        nextMeleeAt = Time.time + Mathf.Max(0.2f, meleeCooldown);
+        meleeRecoveryUntil = Time.time + 0.28f;
+        CancelReload();
+        IsAiming = false;
+        if (ViewMotion) ViewMotion.KickMelee();
+        Ray ray = new Ray(playerCam.transform.position, playerCam.transform.forward);
+        if (!FindClosestHit(ray, meleeRange, meleeRadius, out RaycastHit hit)) return true;
+        ZombieAI zombie = hit.collider.GetComponentInParent<ZombieAI>();
+        if (!zombie || zombie.IsDead) return true;
+        // The generous sweep must not reach a zombie around an intervening wall.
+        Vector3 toHit = hit.point - ray.origin;
+        if (toHit.sqrMagnitude > 0.0001f && FindClosestHit(new Ray(ray.origin, toHit.normalized), toHit.magnitude + 0.03f, 0f, out RaycastHit obstruction)
+            && obstruction.collider.GetComponentInParent<ZombieAI>() != zombie) return true;
+        float multiplier = SurvivalSession.Instance != null ? SurvivalSession.Instance.DamageMultiplier : 1f;
+        int hitDamage = SurvivalSession.Instance != null && SurvivalSession.Instance.InstaKillActive
+            ? Mathf.Max(1, zombie.CurrentHealth) : Mathf.Max(1, Mathf.RoundToInt(meleeDamage * multiplier));
+        zombie.TakeDamage(hitDamage, false);
+        if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterHit(zombie.IsDead, false, true);
+        RequestSave();
+        return true;
     }
 
     static bool IsHeadshot(RaycastHit hit, ZombieAI zombie)
@@ -251,6 +302,7 @@ public class GunSystem : MonoBehaviour
         currentAmmo = Mathf.Max(1, magSize);
         reserveAmmo = initialReserveAmmo;
         nextTimeToFire = 0f;
+        nextMeleeAt = meleeRecoveryUntil = 0f;
     }
 
     public void ApplyLoadedGun(string armaNome, int ammoMag, int ammoReserva)
@@ -270,7 +322,9 @@ public class GunSystem : MonoBehaviour
     {
         CancelReload();
         IsAiming = false;
+        meleeRecoveryUntil = 0f;
         if (bulletTrail) bulletTrail.enabled = false;
         if (playerCam) playerCam.fieldOfView = baseFieldOfView;
+        if (ViewMotion) ViewMotion.ResetPose();
     }
 }
