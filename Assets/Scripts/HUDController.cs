@@ -3,14 +3,20 @@ using TMPro;
 
 public class HUDController : MonoBehaviour
 {
-    [Header("ReferÍncias")]
+    void Start()
+    {
+        // Keep legacy references for old scenes; the new canvas replaces only this HUD subtree.
+        if (SurvivalSession.Instance != null) gameObject.SetActive(false);
+    }
+
+    [Header("Refer√™ncias")]
     public GunSystem gun;              // arma do jogador
     public PlayerHealth player;        // vida do jogador
     public RoundManager roundManager;  // gestor de rondas
 
     [Header("UI - Vida / Balas / Arma")]
     public TMP_Text hpText;            // texto da vida
-    public TMP_Text ammoText;          // texto da muniÁ„o
+    public TMP_Text ammoText;          // texto da muni√ß√£o
     public TMP_Text gunText;           // texto do nome da arma
 
     [Header("UI - Ronda / Timer")]
@@ -34,7 +40,7 @@ public class HUDController : MonoBehaviour
 
 
 
-        // --- MUNI«√O ---
+        // --- MUNI√á√ÉO ---
         if (gun && ammoText)
             ammoText.text = $"{gun.currentAmmo}<size=60%><color=#B0B0B0>/{gun.reserveAmmo}</color></size>";
 
@@ -42,18 +48,18 @@ public class HUDController : MonoBehaviour
         if (gun && gunText)
             gunText.text = gun.gunName;
 
-        // --- RONDA (ROUND l· em cima) ---
+        // --- RONDA (ROUND l√° em cima) ---
         if (roundManager && roundText)
             roundText.text = $"ROUND {roundManager.currentRound}";
 
-        // --- TIMER (TIME l· em cima) ---
+        // --- TIMER (TIME l√° em cima) ---
         if (roundManager && timerText)
         {
             if (roundManager.inIntermission)
             {
                 int secs = Mathf.CeilToInt(roundManager.intermissionTimer);
 
-                // texto diferente no INÕCIO vs entre rondas
+                // texto diferente no IN√çCIO vs entre rondas
                 if (roundManager.isGameStarting)
                     timerText.text = $"GAME STARTS IN: {secs}";
                 else

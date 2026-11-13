@@ -1,41 +1,56 @@
 using UnityEngine;
 
+// Health, weapons and sessions finish their normal initialisation before this loader.
+[DefaultExecutionOrder(200)]
 public class GameLoader : MonoBehaviour
 {
-    [Header("Referências")]
-    public GunSystem gunSystem;  // script que controla a arma e as balas
+    [Header("References")]
+    public GunSystem gunSystem;
+    private bool initialized;
 
     private void Start()
     {
-        int loadFlag = PlayerPrefs.GetInt("load", 0);
-        Debug.Log("GameLoader: flag de load = " + loadFlag);
+        if (initialized) return;
+        initialized = true;
+        bool requestedLoad = PlayerPrefs.GetInt("load", 0) == 1;
+        PlayerPrefs.DeleteKey("load"); // Consume once, after every Awake has completed.
+        var saves = SaveSystem.EnsureInstance();
+        if (gunSystem == null) gunSystem = FindFirstObjectByType<GunSystem>();
+        var health = FindFirstObjectByType<PlayerHealth>();
+        var movement = FindFirstObjectByType<PlayerController>();
+        var rounds = FindFirstObjectByType<RoundManager>();
+        var session = SurvivalSession.Instance;
 
-        if (gunSystem == null)
+        GameState state = null;
+        bool loaded = requestedLoad && saves.TryLoad(out state);
+        if (loaded)
         {
-            Debug.LogWarning("GameLoader: gunSystem não ligado no Inspector!");
-            return;
-        }
-
-        if (loadFlag == 1)
-        {
-            // não limpamos a flag aqui, porque o PlayerHealth também precisa dela
-            GameState gs = SaveSystem.instance.Load();
-
-            Debug.Log("GameLoader: carregado da BD -> " +
-                      "Vida = " + gs.vida +
-                      ", Arma = " + gs.arma_nome +
-                      ", Mag = " + gs.ammo_carregador +
-                      ", Reserva = " + gs.ammo_reserva);
-
-            gunSystem.ApplyLoadedGun(gs.arma_nome,
-                                     gs.ammo_carregador,
-                                     gs.ammo_reserva);
+            if (session != null) session.ApplySavedProgress(state);
+            int healthBonus = session != null ? session.HealthBonus : Mathf.Clamp(state.health_bonus, 0, 100);
+            if (health != null) health.ApplyLoadedHealth(state.vida, health.MaxHP + healthBonus);
+            if (gunSystem != null)
+                gunSystem.ApplyLoadedGun(state.arma_nome, state.ammo_carregador, state.ammo_reserva);
+            if (rounds != null) rounds.currentRound = Mathf.Max(1, state.round);
+            Vector3 position = new Vector3(state.pos_x, state.pos_y, state.pos_z);
+            if (movement != null && state.has_position != 0 && IsFinite(position))
+                movement.ApplyLoadedPosition(position);
         }
         else
         {
-            Debug.Log("GameLoader: jogo novo (sem load)");
-
-            gunSystem.InitNewGame();
+            saves.ResetForNewGame();
+            if (health != null) health.InitNewGame();
+            if (gunSystem != null) gunSystem.InitNewGame();
+            if (rounds != null) rounds.currentRound = 1;
+            if (requestedLoad && session != null)
+                session.ShowMessage("Save unavailable. Starting a new run.");
         }
+        saves.BeginSession();
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) && !float.IsInfinity(value.z);
     }
 }
