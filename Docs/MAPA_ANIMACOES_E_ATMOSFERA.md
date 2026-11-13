@@ -7,6 +7,7 @@ com placas, luzes e comandos próprios. Não há novos modelos de armas ou anima
 o trabalho aproveita os clips existentes e acrescenta movimento procedural à arma.
 As alterações posteriores de zonas fechadas, variantes e morte física estão detalhadas em
 [Zonas, variantes e mortes](ZONAS_E_VARIANTES.md).
+Os sistemas atuais de equipamento, entradas reparáveis e atalhos estão em [Mapa, barricadas e armas](MAPA_BARRICADAS_E_ARMAS.md).
 
 ### Progressão física
 
@@ -66,7 +67,7 @@ sessões continuadas; buffs temporários ficam excluídos. Dados antigos continu
 
 Os testes fora do Unity verificam lógica, persistência e contratos entre scripts. Não avaliam o aspeto final,
 a física, os importers FBX, as transições reais do Animator ou a navegação real.
-Passaram75cenários (9rondas,12SQLite real e54gameplay). Referências de skins e ossos foram inspecionadas
+Passaram96cenários (9rondas,15SQLite real e72gameplay). Referências de skins e ossos foram inspecionadas
 nos prefabs. Isso não comprova a aparência nem a estabilidade física no Editor.
 
 1. Fazer Fetch/Pull da branch e deixar o Unity6000.2.8f1 reimportar o controller e o meta de run.

@@ -23,4 +23,7 @@ public class GameState
     public int unlocked_zones;
     public int power_enabled;
     public float elapsed_seconds;
+    public string weapon_loadout = "";
+    public string barricades = "";
+    public int shortcut_flags;
 }

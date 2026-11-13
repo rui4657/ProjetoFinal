@@ -8,6 +8,7 @@ public sealed class QuarantineZones : MonoBehaviour
     private sealed class Gate
     {
         public int RequiredFlag;
+        public int ShortcutBit;
         public Transform Leaf;
         public BoxCollider Collider;
         public NavMeshObstacle Obstacle;
@@ -45,7 +46,7 @@ public sealed class QuarantineZones : MonoBehaviour
         flags = QuarantineRules.Normalize(unlocked);
         foreach (var gate in gates)
         {
-            bool open = (flags & gate.RequiredFlag) != 0;
+            bool open = IsGateOpen(gate);
             gate.Collider.enabled = !open;
             gate.Obstacle.enabled = !open;
         }
@@ -56,7 +57,7 @@ public sealed class QuarantineZones : MonoBehaviour
         WorldInteraction nearest = null; float distance = float.PositiveInfinity;
         foreach (var gate in gates)
         {
-            if (gate.RequiredFlag != flag || gate.Station == null) continue;
+            if (gate.RequiredFlag != flag || gate.ShortcutBit != 0 || gate.Station == null) continue;
             float candidate = (gate.Station.transform.position - world.SafeSpawn).sqrMagnitude;
             if (candidate < distance) { nearest = gate.Station; distance = candidate; }
         }
@@ -88,38 +89,67 @@ public sealed class QuarantineZones : MonoBehaviour
 
     private void ClosedSide(float min, float max, float x)
     {
-        for (float a = min; a < max - .01f; a += 2)
-        {
-            float b = Mathf.Min(max, a + 2); string key = "V" + x + ":" + a + ":" + b;
-            if (wallKeys.Add(key)) MakeWall(MapPoint(x, a), MapPoint(x, b), true);
-        }
-        WallBarrier(min, max, x, true);
+        BuildSpan(min, max, x, true, 0, 0, null);
     }
 
     private void Side(float min, float max, float constant, bool vertical, float gateAt, int required, string title)
     {
-        const float halfGap = 2f;
-        gateAt = Mathf.Clamp(gateAt, min + halfGap + 1, max - halfGap - 1);
-        // Two-metre wall pieces deduplicate coincident sides of the nested districts.
+        BuildSpan(min, max, constant, vertical, gateAt, required, title);
+    }
+
+    private sealed class Opening
+    {
+        public float Start, End;
+        public int Required, Shortcut;
+        public string Title;
+        public int Breach = -1;
+    }
+    private void BuildSpan(float min, float max, float constant, bool vertical, float gateAt, int required, string title)
+    {
+        var openings = new List<Opening>();
+        if (required != 0)
+        {
+            float start = min + Mathf.Floor((gateAt - 2 - min) / 2) * 2;
+            float end = Mathf.Min(max, min + Mathf.Ceil((gateAt + 2 - min) / 2) * 2);
+            openings.Add(new Opening { Start = start, End = end, Required = required, Title = title });
+        }
+        foreach (var site in SurvivalMapLayout.Breaches)
+            if (site.Vertical == vertical && Mathf.Abs(site.Constant - constant) < .01f && site.Along - 2 >= min && site.Along + 2 <= max)
+                openings.Add(new Opening { Start = site.Along - 2, End = site.Along + 2, Breach = site.Id });
+        float shortcutAt = constant == 432 ? 578 : 584;
+        if (vertical && (constant == 432 || constant == 480) && shortcutAt - 2 >= min && shortcutAt + 2 <= max)
+            openings.Add(new Opening { Start = shortcutAt - 2, End = shortcutAt + 2, Required = 2,
+                Shortcut = constant == 432 ? 1 : 2, Title = constant == 432 ? "ATALHO OESTE" : "ATALHO ESTE" });
+        openings.Sort((a, b) => a.Start.CompareTo(b.Start));
+        float cursor = min;
+        foreach (var opening in openings)
+        {
+            SolidSpan(cursor, opening.Start, constant, vertical); cursor = opening.End;
+            Vector3 center = MapPoint(vertical ? constant : (opening.Start + opening.End) * .5f,
+                vertical ? (opening.Start + opening.End) * .5f : constant);
+            if (opening.Breach >= 0)
+            {
+                bool exists = false; foreach (var entry in world.Barricades.Entries) if (entry.Site.Id == opening.Breach) exists = true;
+                if (!exists) BarricadeEntry.Create(world.Barricades, SurvivalMapLayout.Breaches[opening.Breach], center);
+            }
+            else
+            {
+                string key = (vertical ? "V" : "H") + constant + ":" + opening.Start + ":" + opening.End;
+                if (!gateKeys.ContainsKey(key)) MakeGate(center, opening.End - opening.Start, vertical,
+                    opening.Required, opening.Title, key, opening.Shortcut);
+            }
+        }
+        SolidSpan(cursor, max, constant, vertical);
+    }
+    private void SolidSpan(float min, float max, float constant, bool vertical)
+    {
         for (float a = min; a < max - .01f; a += 2)
         {
-            float b = Mathf.Min(max, a + 2);
-            if (b > gateAt - halfGap && a < gateAt + halfGap) continue;
-            string key = (vertical ? "V" : "H") + constant + ":" + a + ":" + b;
-            if (!wallKeys.Add(key)) continue;
-            Vector3 first = MapPoint(vertical ? constant : a, vertical ? a : constant);
-            Vector3 last = MapPoint(vertical ? constant : b, vertical ? b : constant);
-            MakeWall(first, last, vertical);
+            float b = Mathf.Min(max, a + 2); string key = (vertical ? "V" : "H") + constant + ":" + a + ":" + b;
+            if (wallKeys.Add(key)) MakeWall(MapPoint(vertical ? constant : a, vertical ? a : constant),
+                MapPoint(vertical ? constant : b, vertical ? b : constant), vertical);
         }
-        // The visual/physics opening matches the skipped wall pieces exactly.
-        float gapStart = min + Mathf.Floor((gateAt - halfGap - min) / 2) * 2;
-        float gapEnd = Mathf.Min(max, min + Mathf.Ceil((gateAt + halfGap - min) / 2) * 2);
-        WallBarrier(min, gapStart, constant, vertical);
-        WallBarrier(gapEnd, max, constant, vertical);
-        Vector3 center = MapPoint(vertical ? constant : (gapStart + gapEnd) / 2,
-            vertical ? (gapStart + gapEnd) / 2 : constant);
-        string gateKey = (vertical ? "V" : "H") + constant + ":" + gapStart + ":" + gapEnd;
-        if (!gateKeys.ContainsKey(gateKey)) MakeGate(center, gapEnd - gapStart, vertical, required, title, gateKey);
+        WallBarrier(min, max, constant, vertical);
     }
 
     private Vector3 MapPoint(float x, float z)
@@ -167,7 +197,7 @@ public sealed class QuarantineZones : MonoBehaviour
         AddBarrier(go, Vector3.zero, new Vector3(max - min + .08f, high - low + 6, .65f));
     }
 
-    private void MakeGate(Vector3 point, float width, bool vertical, int required, string title, string key)
+    private void MakeGate(Vector3 point, float width, bool vertical, int required, string title, string key, int shortcut = 0)
     {
         Vector3 along = vertical ? Vector3.forward : Vector3.right;
         float low = Mathf.Min(point.y, Mathf.Min(Ground(point - along * width * .5f), Ground(point + along * width * .5f)));
@@ -185,10 +215,10 @@ public sealed class QuarantineZones : MonoBehaviour
         AddArt(leaf, doorPrefab != null ? doorPrefab : fencePrefab, width, height);
         go.transform.rotation = rotation;
         var barrier = AddBarrier(go, Vector3.up * (height * .5f - .5f), new Vector3(width + .15f, height + 1, .9f));
-        var gate = new Gate { RequiredFlag = required, Leaf = hinge, Collider = barrier,
+        var gate = new Gate { RequiredFlag = required, ShortcutBit = shortcut, Leaf = hinge, Collider = barrier,
             Obstacle = go.GetComponent<NavMeshObstacle>(), ClosedRotation = hinge.localRotation };
         gates.Add(gate); gateKeys.Add(key, gate);
-        var kind = required == QuarantineRules.Church ? WorldInteraction.InteractionKind.ChurchGate
+        var kind = shortcut != 0 ? WorldInteraction.InteractionKind.Shortcut : required == QuarantineRules.Church ? WorldInteraction.InteractionKind.ChurchGate
             : required == QuarantineRules.Village ? WorldInteraction.InteractionKind.VillageGate : WorldInteraction.InteractionKind.OutskirtsGate;
         var controls = new GameObject("Gate controls"); controls.transform.SetParent(go.transform, false);
         float inside = go.transform.InverseTransformPoint(world.SafeSpawn).z >= 0 ? 1 : -1;
@@ -200,6 +230,7 @@ public sealed class QuarantineZones : MonoBehaviour
         post.transform.localScale = new Vector3(.14f, 1.5f, .14f); post.GetComponent<Renderer>().sharedMaterial = fallbackMaterial;
         post.GetComponent<Collider>().enabled = false;
         var station = controls.AddComponent<WorldInteraction>(); station.Configure(world, kind, title, 3.6f, go.transform);
+        if (shortcut != 0) station.ConfigureShortcut(shortcut);
         station.BuildPresentation(true);
         gate.Station = station;
     }
@@ -250,7 +281,7 @@ public sealed class QuarantineZones : MonoBehaviour
     {
         foreach (var gate in gates)
         {
-            gate.OpenBlend = Mathf.MoveTowards(gate.OpenBlend, (flags & gate.RequiredFlag) != 0 ? 1 : 0, Time.deltaTime * 1.5f);
+            gate.OpenBlend = Mathf.MoveTowards(gate.OpenBlend, IsGateOpen(gate) ? 1 : 0, Time.deltaTime * 1.5f);
             gate.Leaf.localRotation = gate.ClosedRotation * Quaternion.Euler(0, -100 * Mathf.SmoothStep(0, 1, gate.OpenBlend), 0);
         }
         var session = SurvivalSession.Instance;
@@ -264,6 +295,8 @@ public sealed class QuarantineZones : MonoBehaviour
             if (Time.time > nextWarning) { session.ShowMessage("ZONA FECHADA · USA OS PORTÕES ASSINALADOS"); nextWarning = Time.time + 3; }
         }
     }
+
+    private bool IsGateOpen(Gate gate) => gate.ShortcutBit != 0 ? (world.ShortcutFlags & gate.ShortcutBit) != 0 : (flags & gate.RequiredFlag) != 0;
 
     private void OnDestroy() { if (fallbackMaterial != null) Destroy(fallbackMaterial); }
 }

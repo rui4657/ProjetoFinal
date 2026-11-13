@@ -69,6 +69,7 @@ public class ZombieSpawner : MonoBehaviour
         if (template == null) return false;
         var agentTemplate = template.GetComponent<NavMeshAgent>();
         var filter = new NavMeshQueryFilter { agentTypeID = agentTemplate != null ? agentTemplate.agentTypeID : 0, areaMask = NavMesh.AllAreas };
+        if (ordinal % 4 != 3 && TrySpawnBreach(template, kind, currentRound, owner, filter)) { ordinal++; return true; }
         float sector = (directionIndex++ % 8) * 45f;
         for (int attempt = 0; attempt < 48; attempt++)
         {
@@ -94,6 +95,29 @@ public class ZombieSpawner : MonoBehaviour
             zombie.archetype = kind;
             zombie.InitializeForRound(currentRound, owner); ordinal++;
             return true;
+        }
+        return false;
+    }
+
+    private bool TrySpawnBreach(GameObject template, ZombieArchetype kind, int round, RoundManager owner, NavMeshQueryFilter filter)
+    {
+        var world = WorldProgression.Instance; if (world == null) return false;
+        var entries = world.Barricades.Entries;
+        for (int n = 0; n < entries.Count; n++)
+        {
+            var entry = entries[(directionIndex + n) % entries.Count];
+            if (entry == null || !entry.IsOpenSector || !entry.HasCapacity) continue;
+            if (!TryPosition(entry.InnerPoint, filter, template, true, out Vector3 landing)
+                || Vector3.Dot(landing - entry.transform.position, entry.transform.forward) < 1.2f) continue;
+            if (!NavMesh.SamplePosition(entry.OuterPoint, out NavMeshHit outside, 2, filter)
+                || Vector3.Dot(outside.position - entry.transform.position, entry.transform.forward) > -1.2f) continue;
+            float radius = .7f;
+            if (Physics.OverlapCapsuleNonAlloc(outside.position + Vector3.up * .8f, outside.position + Vector3.up * 2.5f,
+                radius, occupancy, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) > 0) continue;
+            var spawned = Instantiate(template, outside.position, Quaternion.LookRotation(entry.transform.forward));
+            var zombie = spawned.GetComponent<ZombieAI>(); var agent = spawned.GetComponent<NavMeshAgent>();
+            if (zombie == null || agent == null || !agent.isOnNavMesh || !zombie.BeginBreach(entry, landing)) { Destroy(spawned); continue; }
+            zombie.archetype = kind; zombie.InitializeForRound(round, owner); directionIndex++; return true;
         }
         return false;
     }

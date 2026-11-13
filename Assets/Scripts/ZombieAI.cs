@@ -10,6 +10,10 @@ public class ZombieAI : MonoBehaviour
     private Vector3 lastHitDirection;
     private float nextRangedAttack;
     private Transform headBone;
+    private BarricadeEntry breach;
+    private Vector3 breachLanding, vaultFrom;
+    private float vaultAt = -1, nextBashAt, pendingBashAt;
+    public bool IsEntering => breach != null;
     public bool HasHeadBone => headBone != null;
     public bool IsHeadHit(Vector3 point) => headBone != null &&
         Mathf.Abs(point.y - (headBone.position.y + .05f * transform.lossyScale.y)) <= Mathf.Max(.22f, .16f * transform.lossyScale.y);
@@ -194,6 +198,7 @@ public class ZombieAI : MonoBehaviour
             SetAnimationSpeed(0f);
             return;
         }
+        if (breach != null) { UpdateBreach(); return; }
         if (!AgentReady) return;
         if (Time.time < staggerUntil)
         {
@@ -223,6 +228,65 @@ public class ZombieAI : MonoBehaviour
             facing.y = 0f;
             if (facing.sqrMagnitude > 0.001f)
                 transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(facing), Time.deltaTime * 8f);
+        }
+    }
+
+    public bool BeginBreach(BarricadeEntry entry, Vector3 landing)
+    {
+        if (IsDead || breach != null || entry == null || !entry.Register(this)) return false;
+        breach = entry; breachLanding = landing; vaultAt = -1; pendingBashAt = 0;
+        if (agent != null) agent.enabled = false;
+        return true;
+    }
+    private void UpdateBreach()
+    {
+        if (Time.time < staggerUntil) { pendingBashAt = 0; SetAnimationSpeed(0); return; }
+        Quaternion facing = Quaternion.LookRotation(breach.transform.forward);
+        if (vaultAt >= 0)
+        {
+            float t = Mathf.Clamp01((Time.time - vaultAt) / 1.1f);
+            float arc = Mathf.Sin(t * Mathf.PI);
+            transform.position = Vector3.Lerp(vaultFrom, breachLanding, t) + Vector3.up * (arc * 1.9f);
+            transform.rotation = facing * Quaternion.Euler(55 * arc, 0, 0);
+            if (t >= 1)
+            {
+                if (agent != null)
+                {
+                    var filter = new NavMeshQueryFilter { agentTypeID = agent.agentTypeID, areaMask = NavMesh.AllAreas };
+                    if (!NavMesh.SamplePosition(breachLanding, out NavMeshHit hit, 1.5f, filter)) return;
+                    transform.position = hit.position;
+                    agent.enabled = true;
+                    // Warp can recover an agent that was off-mesh while crossing the sill.
+                    if (!agent.Warp(hit.position)) { agent.enabled = false; return; }
+                    transform.position = hit.position;
+                }
+                breach.Release(this); breach = null;
+                nextRepath = 0;
+            }
+            return;
+        }
+        Vector3 attackSpot = breach.transform.position - breach.transform.forward * 1.4f;
+        transform.rotation = Quaternion.Slerp(transform.rotation, facing, Time.deltaTime * 8);
+        if ((transform.position - attackSpot).sqrMagnitude > .04f)
+        {
+            transform.position = Vector3.MoveTowards(transform.position, attackSpot, Time.deltaTime * Mathf.Min(baseSpeed, 3));
+            SetAnimationSpeed(baseSpeed); return;
+        }
+        SetAnimationSpeed(0);
+        if (breach.Planks == 0)
+        {
+            vaultAt = Time.time; vaultFrom = transform.position;
+            if (anim != null && hasAttackParameter) anim.SetTrigger(attackTrigger);
+            return;
+        }
+        if (pendingBashAt > 0 && Time.time >= pendingBashAt)
+        { breach.Bash(this); pendingBashAt = 0; }
+        if (pendingBashAt <= 0 && Time.time >= nextBashAt)
+        {
+            pendingBashAt = Time.time + Mathf.Max(.25f, attackWindup);
+            nextBashAt = Time.time + Mathf.Max(.9f, attackCooldown);
+            if (anim != null && hasAttackParameter) anim.SetTrigger(attackTrigger);
+            PlayOne(attackClip, attackVol * .5f);
         }
     }
 
@@ -356,6 +420,7 @@ public class ZombieAI : MonoBehaviour
 
     private void TryStagger(bool headshot)
     {
+        if (breach != null && vaultAt >= 0) return;
         // Even automatic fire cannot keep a zombie permanently stunned.
         if (Time.time < nextStaggerTime || staggerDuration <= 0f) return;
         staggerUntil = Time.time + Mathf.Min(0.45f, staggerDuration * (headshot ? 1.25f : 1f));
@@ -374,6 +439,8 @@ public class ZombieAI : MonoBehaviour
     {
         if (IsDead) return;
         IsDead = true;
+        Vector3 dropPosition = breach != null ? breachLanding : transform.position;
+        if (breach != null) { breach.Release(this); breach = null; }
         StopAllCoroutines();
         canAttack = false;
         attacking = false;
@@ -387,7 +454,7 @@ public class ZombieAI : MonoBehaviour
         if (!powerUpRolled)
         {
             powerUpRolled = true;
-            if (SurvivalSession.Instance != null) SurvivalSession.Instance.TryDropPowerUp(transform.position);
+            if (SurvivalSession.Instance != null) SurvivalSession.Instance.TryDropPowerUp(dropPosition);
         }
         NotifyRoundOnce();
     }
@@ -401,6 +468,7 @@ public class ZombieAI : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (breach != null) breach.Release(this);
         // External cleanup of a living spawned zombie must not strand its wave.
         NotifyRoundOnce();
     }

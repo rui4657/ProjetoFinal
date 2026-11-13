@@ -73,10 +73,19 @@ public class WeaponViewMotion : MonoBehaviour
         MotionPivot.localScale = Vector3.one;
         // The new parent is identity, so all original local position/rotation/scale values remain valid.
         viewModelRoot.SetParent(MotionPivot, false);
-        modelAnimator = viewModelRoot.GetComponentInChildren<Animator>();
+        BindModel(viewModelRoot);
+    }
+
+    public void BindModel(Transform selected)
+    {
+        if (gun == null || gun.playerCam == null || selected == null || originalParent == null) return;
+        ResetPose(); magazine = null;
+        hasFireState = hasBoltState = hasIdleState = animatorStatesReady = false;
+        Transform camera = gun.playerCam.transform;
+        modelAnimator = selected.GetComponentInChildren<Animator>();
         CacheAnimatorStates();
         Transform sight = null;
-        foreach (Transform child in viewModelRoot.GetComponentsInChildren<Transform>(true))
+        foreach (Transform child in selected.GetComponentsInChildren<Transform>(true))
         {
             if (string.Equals(child.name, "mag", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(child.name, "magazine", StringComparison.OrdinalIgnoreCase)) magazine = child;
@@ -145,6 +154,7 @@ public class WeaponViewMotion : MonoBehaviour
         position += new Vector3(-mouseX, -mouseY, 0f) * swayAmount * subtle;
         euler += new Vector3(mouseY * 1.5f, -mouseX * 2f, -mouseX * 1.4f) * subtle;
         position += AimOffset * AimBlend + new Vector3(0.06f, -0.13f, -0.04f) * sprintBlend;
+        if (gun.IsSwitching) position += Vector3.down * .18f;
         euler += new Vector3(12f, -8f, -10f * comfortScale) * sprintBlend;
         float reloadProgress = reloading ? gun.ReloadProgress : 0f;
         float reloadPose = ReloadPoseWeight(reloadProgress);
@@ -168,7 +178,7 @@ public class WeaponViewMotion : MonoBehaviour
     public void KickShot()
     {
         if (!IsInitialized || !gun || Time.timeScale <= 0f) return;
-        float strength = gun.IsAiming ? 0.5f : 1f;
+        float strength = (gun.IsAiming ? 0.5f : 1f) * Mathf.Clamp(gun.recoil / .9f, .5f, 2.5f);
         recoilPosition.z = Mathf.Max(-0.09f, recoilPosition.z - 0.035f * strength);
         recoilEuler.x = Mathf.Max(-8f, recoilEuler.x - 2.2f * strength);
         recoilEuler.y = Mathf.Clamp(recoilEuler.y + UnityEngine.Random.Range(-0.6f, 0.6f) * strength, -2.5f, 2.5f);

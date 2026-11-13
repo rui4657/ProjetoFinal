@@ -6,6 +6,9 @@ using UnityEngine.AI;
 /// <summary>Runs against the real imported assets and physics in the user's Unity Editor.</summary>
 public static class DeadlineValidation
 {
+    [MenuItem("Tools/DEADLINE/Verificar mapa, barricadas e armas")]
+    public static void ValidateContent() => Validate();
+
     [MenuItem("Tools/DEADLINE/Verificar zonas e variantes")]
     public static void Validate()
     {
@@ -33,6 +36,7 @@ public static class DeadlineValidation
             if (!head || !hips) issues.Add("Rig deformador incompleto em " + names[i]);
         }
         if (textures.Count < 3) issues.Add("As variantes não têm os três conjuntos de pele importados.");
+        if (Resources.Load<GameObject>("World/BarricadePlank") == null) issues.Add("Falta a madeira original das barricadas.");
         if (Application.isPlaying)
         {
             var world = WorldProgression.Instance;
@@ -45,10 +49,11 @@ public static class DeadlineValidation
                     int flag = station.Kind == WorldInteraction.InteractionKind.ChurchGate ? 1
                         : station.Kind == WorldInteraction.InteractionKind.VillageGate ? 2
                         : station.Kind == WorldInteraction.InteractionKind.OutskirtsGate ? 4 : 0;
-                    if (flag == 0) continue;
+                    bool shortcut = station.Kind == WorldInteraction.InteractionKind.Shortcut;
+                    if (flag == 0 && !shortcut) continue;
                     var collider = station.GetComponentInParent<BoxCollider>();
                     var obstacle = station.GetComponentInParent<NavMeshObstacle>();
-                    bool closed = (world.UnlockedZones & flag) == 0;
+                    bool closed = shortcut ? (world.ShortcutFlags & station.ShortcutBit) == 0 : (world.UnlockedZones & flag) == 0;
                     if (collider == null || obstacle == null || collider.enabled != closed || obstacle.enabled != closed || !obstacle.carving)
                     { issues.Add("Colisão/navegação incoerente em " + station.Title); continue; }
                     if (!closed) continue;
@@ -58,6 +63,22 @@ public static class DeadlineValidation
                     bool solid = false; foreach (var hit in hits) if (hit.collider == collider) solid = true;
                     if (!solid) issues.Add("A física não detetou o portão fechado " + station.Title);
                 }
+                if (world.Barricades.Entries.Count != BarricadeLedger.WindowCount) issues.Add("O mapa não tem as 11 entradas de barricada previstas.");
+                int usableEntries = 0;
+                foreach (var entry in world.Barricades.Entries)
+                {
+                    if (entry == null) continue;
+                    var obstacle = entry.GetComponent<NavMeshObstacle>();
+                    if (obstacle == null || !obstacle.carving) issues.Add("Janela sem bloqueio de navegação: " + entry.name);
+                    if (!entry.IsOpenSector) continue;
+                    if (NavMesh.SamplePosition(entry.InnerPoint, out NavMeshHit landing, 2, NavMesh.AllAreas)
+                        && world.IsInsideOpenArea(landing.position)) usableEntries++;
+                    else Debug.LogWarning("Confirmar o chão interior desta barricada: " + entry.name, entry);
+                }
+                if (usableEntries == 0) issues.Add("Nenhuma entrada ativa tem chão navegável. Verificar a colocação das janelas no terreno.");
+                var gun = Object.FindFirstObjectByType<GunSystem>();
+                if (gun == null || gun.muzzlePoint == null || gun.playerCam == null) issues.Add("Arma ativa sem câmara ou ponto de disparo.");
+                else if (!WeaponLoadout.TryDecode(gun.CaptureLoadout(), out _)) issues.Add("O inventário ativo não pode ser guardado.");
                 foreach (var zombie in Object.FindObjectsByType<ZombieAI>(FindObjectsSortMode.None))
                 {
                     if (!zombie.IsDead) continue;
@@ -73,7 +94,7 @@ public static class DeadlineValidation
             }
         }
         if (issues.Count == 0)
-            Debug.Log("DEADLINE: variantes/skins/rig válidos" + (Application.isPlaying ? "; portões, navegação e raios físicos coerentes nesta partida." : ". Entra em Play e repete para verificar os portões reais."));
+            Debug.Log("DEADLINE: variantes/skins/rig e recursos de mapa válidos" + (Application.isPlaying ? "; portões, barricadas e inventário coerentes nesta partida." : ". Entra em Play e repete para verificar mapa e armas."));
         else Debug.LogError("DEADLINE — verificações a corrigir:\n" + string.Join("\n", issues));
     }
 }

@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="850" viewBox="0 0 1000 850" role="img" aria-labelledby="title desc">
+<title id="title">DEADLINE — planta de setores, barricadas e armas</title>
+<desc id="desc">Esquema dos setores que abrem nas rondas 3, 5 e 8, onze janelas reparáveis, dois atalhos e compras de armas.</desc>
+<rect width="1000" height="850" fill="#111a20"/>
+<style>text{font-family:Arial,sans-serif;fill:#e6e5da} .small{font-size:12px} .label{font-size:14px;font-weight:bold}</style>
+<text x="48.0" y="36.0" class="label">DEADLINE  /  MAPA, BARRICADAS E ARMAS</text>
+<rect x="100.0" y="128.0" width="432.0" height="639.0" rx="3" fill="#1b333c" stroke="#5c7c83" stroke-width="3"/>
+<rect x="244.0" y="200.0" width="216.0" height="360.0" rx="3" fill="#293c37" stroke="#84978b" stroke-width="3"/>
+<rect x="244.0" y="452.0" width="216.0" height="108.0" rx="3" fill="#473d2a" stroke="#c2a56d" stroke-width="3"/>
+<path d="M 388.0 560.0 L 406.0 560.0" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 343.0 452.0 L 361.0 452.0" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 307.0 200.0 L 325.0 200.0" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 316.0 767.0 L 334.0 767.0" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 271.0 128.0 L 289.0 128.0" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 100.0 447.5 L 100.0 465.5" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 532.0 447.5 L 532.0 465.5" stroke="#f3b95e" stroke-width="7"/>
+<path d="M 244.0 380.0 L 244.0 398.0" stroke="#e88258" stroke-width="7"/>
+<path d="M 460.0 353.0 L 460.0 371.0" stroke="#e88258" stroke-width="7"/>
+<rect x="239.0" y="506.0" width="10" height="18" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="252.0" y="506.0" class="small" style="fill:#9bd1b9">B1</text>
+<rect x="455.0" y="488.0" width="10" height="18" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="468.0" y="488.0" class="small" style="fill:#9bd1b9">B2</text>
+<rect x="271.0" y="555.0" width="18" height="10" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="288.0" y="551.0" class="small" style="fill:#9bd1b9">B3</text>
+<rect x="424.0" y="447.0" width="18" height="10" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="441.0" y="443.0" class="small" style="fill:#9bd1b9">B4</text>
+<rect x="239.0" y="308.0" width="10" height="18" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="252.0" y="308.0" class="small" style="fill:#9bd1b9">B5</text>
+<rect x="406.0" y="195.0" width="18" height="10" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="423.0" y="191.0" class="small" style="fill:#9bd1b9">B6</text>
+<rect x="455.0" y="245.0" width="10" height="18" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="468.0" y="245.0" class="small" style="fill:#9bd1b9">B7</text>
+<rect x="95.0" y="587.0" width="10" height="18" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="108.0" y="587.0" class="small" style="fill:#9bd1b9">B8</text>
+<rect x="208.0" y="762.0" width="18" height="10" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="225.0" y="758.0" class="small" style="fill:#9bd1b9">B9</text>
+<rect x="527.0" y="263.0" width="10" height="18" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="540.0" y="263.0" class="small" style="fill:#9bd1b9">B10</text>
+<rect x="433.0" y="123.0" width="18" height="10" rx="2" fill="#75ba9c" stroke="#11231e"/>
+<text x="450.0" y="119.0" class="small" style="fill:#9bd1b9">B11</text>
+<circle cx="304.15150000000006" cy="490.25" r="11" fill="#f0ede1" stroke="#111a20" stroke-width="2"/>
+<text x="319.2" y="495.2" class="small">INÍCIO</text>
+<circle cx="406.0" cy="515.0" r="11" fill="#79b8de" stroke="#111a20" stroke-width="2"/>
+<text x="421.0" y="520.0" class="small">SM-40</text>
+<circle cx="320.5" cy="393.5" r="11" fill="#79b8de" stroke="#111a20" stroke-width="2"/>
+<text x="335.5" y="398.5" class="small">SG-8</text>
+<circle cx="388.0" cy="587.0" r="11" fill="#79b8de" stroke="#111a20" stroke-width="2"/>
+<text x="403.0" y="592.0" class="small">AK-74</text>
+<circle cx="419.5" cy="614.0" r="11" fill="#a596d1" stroke="#111a20" stroke-width="2"/>
+<text x="434.5" y="619.0" class="small">CAIXA</text>
+<text x="289.0" y="267.5" class="label" style="fill:#c4d2c2">IGREJA · R3</text>
+<text x="140.5" y="677.0" class="label" style="fill:#a4c5d1">VILA · R5</text>
+<text x="625.0" y="103.0" class="label">PROGRESSÃO</text>
+<text x="625.0" y="133.0" class="small">Início: pátio fechado</text>
+<text x="625.0" y="160.0" class="small">Ronda 3: acesso à igreja</text>
+<text x="625.0" y="187.0" class="small">Ronda 5: acesso à vila</text>
+<text x="625.0" y="214.0" class="small">Ronda 8: saídas para o mapa</text>
+<text x="625.0" y="241.0" class="small">Igreja / vila: compra antecipada</text>
+<text x="625.0" y="318.0" class="label">ENTRADAS E PERCURSOS</text>
+<text x="625.0" y="348.0" class="small">B1–B4: pátio inicial</text>
+<text x="625.0" y="375.0" class="small">B5–B7: igreja</text>
+<text x="625.0" y="402.0" class="small">B8–B11: vila</text>
+<text x="625.0" y="429.0" class="small">6 tábuas por barricada</text>
+<text x="625.0" y="456.0" class="small">Manter E: reparar a cada 0,8 s</text>
+<text x="625.0" y="483.0" class="small">Atalhos laterais: 650 pontos cada</text>
+<text x="625.0" y="510.0" class="small">Atalhos disponíveis depois da vila</text>
+<text x="625.0" y="588.0" class="label">EQUIPAMENTO</text>
+<text x="625.0" y="618.0" class="small">PX-9 inicial · dois espaços de arma</text>
+<text x="625.0" y="645.0" class="small">SM-40: 1200 · SG-8: 1500</text>
+<text x="625.0" y="672.0" class="small">AK-74: 1800 · caixa: 950</text>
+<text x="625.0" y="699.0" class="small">1 / 2 / Q / roda: trocar</text>
+<text x="48.0" y="810.0" class="small" style="fill:#a7b8bd">Planta esquemática. Postos procuram chão navegável próximo; percursos e transposição exigem verificação no Unity.</text>
+</svg>

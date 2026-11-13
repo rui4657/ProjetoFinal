@@ -38,7 +38,7 @@ testa métodos e coroutines reais com um relógio/scheduler controlado. A persis
 do projeto e SQLite nativo, incluindo migrações, cultura portuguesa, parâmetros e ficheiros inválidos.
 O README do harness explica os cenários e o comando de execução.
 
-Resultado atual: **75 testes passaram** (9 de rondas, 12 de SQLite e 54 de integração de gameplay).
+Resultado atual: **96 testes passaram** (9 de rondas, 15 de SQLite e 72 de integração de gameplay).
 Uma verificação adicional confirmou o registo e o cast do drawer PostProcessing corrigido.
 
 Isto verifica lógica e contratos entre os scripts. **Não equivale a compilar ou executar o jogo no Unity:**
@@ -48,7 +48,7 @@ O ambiente usado para esta revisão não tem Unity Editor nem licença instalada
 ## Aceitação no Unity 6000.2.8f1
 
 1. Abrir MainMenu, verificar que a Console não tem erros e que iniciar/opções/continuar/apagar/sair respondem.
-2. Iniciar uma partida: HUD legível, 500 pontos, vida100, AK30/120; experimentar preparação e Enter.
+2. Iniciar uma partida: HUD legível, 500 pontos, vida100, PX-9 12/60; experimentar preparação e Enter.
 3. Mover, saltar, correr até esgotar stamina, recuperar e apontar. Comparar mira a diferentes framerates.
 4. Disparar contra zombies, incluindo cabeças e alvos atrás de paredes; confirmar pontuação, recoil, hitmarkers e áudio.
 5. Matar rapidamente o primeiro zombie antes do spawn seguinte: a ronda deve continuar até terminar toda a quota.
@@ -66,4 +66,5 @@ O ambiente usado para esta revisão não tem Unity Editor nem licença instalada
 Esta revisão inclui áreas fechadas, portas compráveis, inimigos especiais e quedas físicas, descritos em
 [Zonas e variantes](ZONAS_E_VARIANTES.md). Os comportamentos e contratos têm testes fora do Editor;
 vedações sobre terreno, navegação após carving, skins importadas e estabilidade dos ragdolls exigem o playtest
-real descrito nesse documento. Novas armas e modelos totalmente distintos não fazem parte desta revisão.
+real descrito nesse documento. A fase seguinte acrescenta [mapa, barricadas e armas](MAPA_BARRICADAS_E_ARMAS.md),
+com dois espaços de equipamento, postos, caixa misteriosa e atalhos. A validação no motor continua necessária.

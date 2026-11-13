@@ -1,7 +1,7 @@
 # DEADLINE — Zombie Survival
 
 Sobrevive a rondas de zombies, ganha pontos e melhora o equipamento entre rondas.
-Projeto Unity 3D a solo, com o mapa e os modelos originais do projeto.
+Projeto Unity 3D a solo no mapa Flooded Grounds.
 
 ## Abrir e jogar
 
@@ -19,12 +19,15 @@ As cenas MainMenu e MainScene já estão na lista de build.
 | Tecla | Ação |
 | --- | --- |
 | WASD / rato | Mover / olhar |
-| Clique esquerdo | Disparar; manter premido para fogo automático |
+| Clique esquerdo | Disparar; manter premido na SM-40 e AK-74 |
 | Clique direito | Apontar: menos dispersão, menor sensibilidade e zoom |
 | R | Recarregar |
+| 1 / 2 | Equipar o primeiro / segundo espaço de arma |
+| Q / roda do rato | Alternar entre as duas armas |
 | Shift esquerdo | Sprint enquanto houver stamina |
 | Espaço | Saltar |
 | E a olhar para um posto | Interagir, desbloquear um objetivo ou comprar equipamento |
+| Manter E a olhar para uma barricada | Reparar uma tábua a cada 0,8 segundos |
 | V | Ataque corpo a corpo, com recuperação curta e alcance limitado |
 | B entre rondas | Abrir / fechar o arsenal; a partida fica em pausa |
 | Enter entre rondas | Saltar a preparação |
@@ -32,7 +35,7 @@ As cenas MainMenu e MainScene já estão na lista de build.
 
 ## Progressão
 
-Começas com **500 pontos**, AK, 30 balas no carregador e 120 de reserva.
+Começas com **500 pontos**, pistola **PX-9**, 12 balas no carregador e 60 de reserva.
 Um acerto não letal dá 10 pontos; uma eliminação dá 60, 100 com headshot ou 130 em corpo a corpo.
 Completar uma ronda dá 100 + 25 × ronda, com o bónus limitado a 1350.
 
@@ -50,6 +53,27 @@ os restantes ficam por gerar, sem desaparecerem da quota da ronda.
 Depois de 6,5 segundos sem sofrer dano, a vida regenera a 8 pontos por segundo. Headshots causam **5× dano**.
 O HUD mostra vida, stamina, munições, recarga, pontos, inimigos restantes e confirmação de acerto/headshot.
 
+## Armas e barricadas
+
+Podes transportar **duas armas**, cada uma com carregador e reserva próprios:
+
+| Arma | Onde comprar | Preço | Munições no posto da arma | Característica |
+| --- | --- | --- | --- | --- |
+| PX-9 | Arma inicial | — | — | Semiautomática, 12 balas |
+| SM-40 | Pátio inicial | 1200 | 450 | Automática rápida, 32 balas |
+| SG-8 | Igreja | 1500 | 500 | 8 projéteis por tiro, 8 cartuchos; recarga cartucho a cartucho |
+| AK-74 | Vila / posto de guarda | 1800 | 600 | Automática com mais alcance, 30 balas |
+
+A primeira compra ocupa o segundo espaço; uma terceira arma substitui a equipada. Os postos passam a vender
+munições dessa arma quando já a tens. O arsenal B e os postos genéricos de 500 pontos abastecem a arma equipada;
+o power-up de munições máximas abastece as duas. Na caçadeira, disparar após carregar um cartucho interrompe a recarga.
+A caixa misteriosa na vila custa **950 pontos** e entrega uma SM-40, SG-8 ou AK-74 que ainda não tenhas.
+
+As **11 barricadas** têm seis tábuas: quatro entradas no início, mais três na igreja e quatro na vila.
+Os zombies aproximam-se, arrancam tábuas e transpõem o peitoril antes de começar a perseguição normal.
+Manter E repõe tábuas, com **10 pontos por tábua e até 120 pontos base de reparação por ronda**.
+A reparação continua disponível depois desse limite. Os spawns normais no NavMesh complementam estas entradas.
+
 ## Objetivos no mapa
 
 O mapa original fica dividido por **vedações visíveis e portões com colisão e bloqueio de NavMesh**:
@@ -60,6 +84,10 @@ O mapa original fica dividido por **vedações visíveis e portões com colisão
 4. **Saídas para o resto do mapa: ronda 8**. Os portões interiores continuam utilizáveis.
 5. Na vila, **liga a energia no posto de guarda por 1250 pontos**. É uma compra separada dos portões e permite usar as melhorias.
 6. Usa **E** nos postos: arsenal na igreja e Fortitude/Recarga Rápida junto ao posto de guarda.
+
+Depois de abrir a vila, dois **atalhos laterais de 650 pontos** criam percursos alternativos à volta da igreja.
+Os atalhos são compras separadas dos portões automáticos. Placas indicam os setores, os percursos e o equipamento.
+Consulta [a planta e os detalhes de mapa, barricadas e armas](Docs/MAPA_BARRICADAS_E_ARMAS.md).
 
 O reabastecimento inicial fica perto do ponto de partida: **500 pontos** enchem carregador e reserva.
 O antigo placeholder de reabastecimento é substituído por equipamento visível, mantendo o local.
@@ -91,6 +119,8 @@ Continuar restaura vida, posição válida, arma, munições, ronda, pontos, eli
 **a ronda atual recomeça com uma nova onda completa**. Uma posição inválida conserva o ponto inicial do mapa.
 Uma morte termina a partida e elimina a recuperação; os recordes de ronda e eliminações permanecem.
 Os saves anteriores são migrados automaticamente, acrescentando os campos de progressão.
+O inventário das duas armas, o espaço ativo, as tábuas/recompensas de reparação e os atalhos também são guardados.
+Saves antigos com AK mantêm essa arma e as suas munições num único espaço.
 Para experimentar os portões todos fechados, escolhe **INICIAR JOGO**: continuar preserva as áreas já desbloqueadas
 e abre também as previstas para a ronda guardada.
 
@@ -104,6 +134,7 @@ Consulta [a revisão técnica e os testes de aceitação](Docs/REVISAO_E_VALIDAC
 Consulta também [o mapa de objetivos, as animações e a atmosfera](Docs/MAPA_ANIMACOES_E_ATMOSFERA.md).
 Os detalhes desta revisão estão em [zonas, variantes e mortes](Docs/ZONAS_E_VARIANTES.md).
 No Editor, **Tools → DEADLINE → Verificar zonas e variantes** verifica os assets importados; repete durante Play para verificar os portões com a física real.
+O comando **Tools → DEADLINE → Verificar mapa, barricadas e armas** acrescenta verificações das entradas e do inventário ativo.
 O harness em `Tools/Verification` testa a lógica fora do Unity e descreve os seus limites.
 Uma compilação Windows e um playtest no Editor continuam necessários para validar renderização,
 animações, áudio, navegação real e o equilíbrio final.

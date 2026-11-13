@@ -101,10 +101,10 @@ public sealed class SurvivalSession : MonoBehaviour
         if (!IsGameOver) ShotsFired++;
     }
 
-    public void RegisterHit(bool killed, bool headshot, bool isMelee = false)
+    public void RegisterHit(bool killed, bool headshot, bool isMelee = false, bool countAccuracy = true)
     {
         if (IsGameOver) return;
-        if (!isMelee) Hits++;
+        if (!isMelee && countAccuracy) Hits++;
         LastHitWasKill = killed;
         LastHitWasHeadshot = headshot;
         HitMarkerUntil = Time.unscaledTime + (killed ? 0.24f : 0.13f);
@@ -137,7 +137,7 @@ public sealed class SurvivalSession : MonoBehaviour
         {
             case SurvivalPowerUp.MaxAmmo:
                 if (Gun == null) return;
-                Gun.AddReserveAmmo(Gun.maxReserveAmmo, true);
+                Gun.RefillAllWeapons();
                 ShowMessage("MUNIÇÕES MÁXIMAS", 3f);
                 break;
             case SurvivalPowerUp.DoublePoints:
