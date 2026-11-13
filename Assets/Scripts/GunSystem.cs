@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class GunSystem : MonoBehaviour
@@ -17,7 +18,7 @@ public class GunSystem : MonoBehaviour
     public LayerMask hitMask = Physics.DefaultRaycastLayers;
     [Min(5f)] public float headshotMultiplier = 5f;
     [Range(0f, 5f)] public float hipSpread = 0.85f;
-    [Range(0f, 2f)] public float aimedSpread = 0.08f;
+    [Range(0f, 5f)] public float aimedSpread = 0.08f;
     [Range(0f, 5f)] public float recoil = 0.9f;
 
     [Header("Corpo a corpo")]
@@ -54,6 +55,9 @@ public class GunSystem : MonoBehaviour
     public bool IsAiming { get; private set; }
     public bool IsMeleeing => Time.time < meleeRecoveryUntil;
     public WeaponViewMotion ViewMotion { get; private set; }
+    public WeaponLoadout Loadout { get; private set; } = new WeaponLoadout();
+    public WeaponId ActiveWeapon => Loadout.Current.Id;
+    public bool IsSwitching => Time.time < switchingUntil;
     public float ReloadProgress => IsReloading ? Mathf.Clamp01((Time.time - reloadStartedAt) / reloadDuration) : 0f;
 
     private readonly RaycastHit[] raycastBuffer = new RaycastHit[64];
@@ -65,7 +69,10 @@ public class GunSystem : MonoBehaviour
     private float reloadDuration = 1f;
     private float trailExpiresAt;
     private float baseFieldOfView = 60f;
-    private int initialReserveAmmo;
+    private float switchingUntil;
+    private WeaponVisuals visuals;
+    private readonly Dictionary<ZombieAI, ShotImpact> shotImpacts = new Dictionary<ZombieAI, ShotImpact>();
+    private struct ShotImpact { public int Damage; public bool Headshot; public Vector3 Direction; }
     private float nextMeleeAt;
     private float meleeRecoveryUntil;
 
@@ -82,7 +89,6 @@ public class GunSystem : MonoBehaviour
             mouseLook = playerCam.GetComponent<MouseLook>();
         }
         if (player) movement = player.GetComponent<PlayerController>();
-        initialReserveAmmo = Mathf.Clamp(reserveAmmo, 0, maxReserveAmmo);
         InitNewGame();
         if (bulletTrail)
         {
@@ -93,6 +99,8 @@ public class GunSystem : MonoBehaviour
         ViewMotion = GetComponent<WeaponViewMotion>();
         if (!ViewMotion) ViewMotion = gameObject.AddComponent<WeaponViewMotion>();
         ViewMotion.Initialize(this);
+        visuals = gameObject.AddComponent<WeaponVisuals>();
+        visuals.Initialize(this);
     }
 
     void Update()
@@ -107,7 +115,13 @@ public class GunSystem : MonoBehaviour
             if (player && player.IsDead) CancelReload();
             return;
         }
+        if (Input.GetKeyDown(KeyCode.Alpha1)) TrySwitchWeapon(0);
+        else if (Input.GetKeyDown(KeyCode.Alpha2)) TrySwitchWeapon(1);
+        else if (Input.GetKeyDown(KeyCode.Q) || Mathf.Abs(Input.GetAxisRaw("Mouse ScrollWheel")) > .01f)
+            TrySwitchWeapon(1 - Loadout.Active);
+        if (IsSwitching) { IsAiming = false; return; }
         if (Input.GetKeyDown(KeyCode.V)) TryMelee();
+        if (IsReloading && WeaponCatalog.Get(ActiveWeapon).ShellReload && currentAmmo > 0 && Input.GetMouseButtonDown(0)) CancelReload();
         IsAiming = !IsReloading && !IsMeleeing && Input.GetMouseButton(1);
         if (IsReloading || IsMeleeing) return;
         if (Input.GetKeyDown(KeyCode.R) || (currentAmmo == 0 && reserveAmmo > 0 && !IsMeleeing))
@@ -121,7 +135,8 @@ public class GunSystem : MonoBehaviour
                 SurvivalSession.Instance.ShowMessage("SEM MUNIÇÕES · procura a estação de abastecimento");
             return;
         }
-        if (Input.GetMouseButton(0) && Time.time >= nextTimeToFire && playerCam) ShootIfPossible();
+        bool trigger = WeaponCatalog.Get(ActiveWeapon).Automatic ? Input.GetMouseButton(0) : Input.GetMouseButtonDown(0);
+        if (trigger && Time.time >= nextTimeToFire && playerCam) ShootIfPossible();
     }
 
     void LateUpdate()
@@ -137,6 +152,7 @@ public class GunSystem : MonoBehaviour
         currentAmmo--;
         nextTimeToFire = Time.time + 1f / Mathf.Max(0.1f, fireRate);
         if (sfxSource && shotClip) sfxSource.PlayOneShot(shotClip, shotVolume);
+        if (visuals) visuals.KickShot();
         if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterShot();
         Shoot();
         if (ViewMotion) ViewMotion.KickShot();
@@ -157,6 +173,18 @@ public class GunSystem : MonoBehaviour
 
     IEnumerator Reload()
     {
+        if (WeaponCatalog.Get(ActiveWeapon).ShellReload)
+        {
+            while (currentAmmo < magSize && reserveAmmo > 0)
+            {
+                reloadStartedAt = Time.time;
+                if (sfxSource && reloadClip) sfxSource.PlayOneShot(reloadClip, reloadVolume * .5f);
+                yield return new WaitForSeconds(reloadDuration);
+                if (player && player.IsDead) { CancelReload(); yield break; }
+                currentAmmo++; reserveAmmo--; RequestSave();
+            }
+            IsReloading = false; reloadRoutine = null; yield break;
+        }
         if (sfxSource && reloadClip) sfxSource.PlayOneShot(reloadClip, reloadVolume);
         yield return new WaitForSeconds(reloadDuration);
         if (player && player.IsDead) { CancelReload(); yield break; }
@@ -177,10 +205,34 @@ public class GunSystem : MonoBehaviour
 
     void Shoot()
     {
+        shotImpacts.Clear();
+        var spec = WeaponCatalog.Get(ActiveWeapon);
+        Vector3 hitPoint = playerCam.transform.position + playerCam.transform.forward * maxDistance;
+        for (int pellet = 0; pellet < spec.Pellets; pellet++)
+            ShootPellet(spec, ref hitPoint);
+        bool accuracyCredited = false;
+        foreach (var pair in shotImpacts)
+        {
+            var zombie = pair.Key; var impact = pair.Value;
+            zombie.TakeDamage(impact.Damage, impact.Headshot, impact.Direction);
+            if (SurvivalSession.Instance != null)
+                SurvivalSession.Instance.RegisterHit(zombie.IsDead, impact.Headshot, false, !accuracyCredited);
+            accuracyCredited = true;
+        }
+        if (muzzleFlash && ActiveWeapon == WeaponId.Rifle) muzzleFlash.Play();
+        if (bulletTrail && muzzlePoint)
+        {
+            bulletTrail.SetPosition(0, muzzlePoint.position); bulletTrail.SetPosition(1, hitPoint);
+            bulletTrail.enabled = true; trailExpiresAt = Time.time + Mathf.Max(.01f, trailTime);
+        }
+    }
+
+    void ShootPellet(WeaponSpec spec, ref Vector3 hitPoint)
+    {
         Vector2 spread = UnityEngine.Random.insideUnitCircle * (IsAiming ? aimedSpread : hipSpread);
         Vector3 direction = playerCam.transform.TransformDirection(Quaternion.Euler(spread.y, spread.x, 0f) * Vector3.forward);
         Ray ray = new Ray(playerCam.transform.position, direction);
-        Vector3 hitPoint = ray.GetPoint(maxDistance);
+        hitPoint = ray.GetPoint(maxDistance);
         if (FindClosestHit(ray, out RaycastHit hit))
         {
             hitPoint = hit.point;
@@ -191,9 +243,10 @@ public class GunSystem : MonoBehaviour
                 float multiplier = SurvivalSession.Instance != null ? SurvivalSession.Instance.DamageMultiplier : 1f;
                 int hitDamage = SurvivalSession.Instance != null && SurvivalSession.Instance.InstaKillActive
                     ? Mathf.Max(1, zombie.CurrentHealth)
-                    : Mathf.Max(1, Mathf.RoundToInt(damage * multiplier * (headshot ? headshotMultiplier : 1f)));
-                zombie.TakeDamage(hitDamage, headshot, direction);
-                if (SurvivalSession.Instance != null) SurvivalSession.Instance.RegisterHit(zombie.IsDead, headshot);
+                    : Mathf.Max(1, Mathf.RoundToInt(damage * multiplier * WeaponCatalog.DamageAt(spec.Id, hit.distance) * (headshot ? headshotMultiplier : 1f)));
+                shotImpacts.TryGetValue(zombie, out ShotImpact impact);
+                impact.Damage += hitDamage; impact.Headshot |= headshot; impact.Direction = direction;
+                shotImpacts[zombie] = impact;
             }
             else
             {
@@ -205,14 +258,6 @@ public class GunSystem : MonoBehaviour
                 GameObject impact = Instantiate(impactEffect, hit.point + hit.normal * 0.01f, Quaternion.LookRotation(hit.normal));
                 Destroy(impact, 2f);
             }
-        }
-        if (muzzleFlash) muzzleFlash.Play();
-        if (bulletTrail && muzzlePoint)
-        {
-            bulletTrail.SetPosition(0, muzzlePoint.position);
-            bulletTrail.SetPosition(1, hitPoint);
-            bulletTrail.enabled = true;
-            trailExpiresAt = Time.time + Mathf.Max(0.01f, trailTime);
         }
     }
 
@@ -251,7 +296,7 @@ public class GunSystem : MonoBehaviour
 
     public bool TryMelee()
     {
-        if (!isActiveAndEnabled || !playerCam || Time.timeScale <= 0f || Time.time < nextMeleeAt
+        if (!isActiveAndEnabled || !playerCam || Time.timeScale <= 0f || Time.time < nextMeleeAt || IsSwitching
             || (player && player.IsDead) || Cursor.lockState != CursorLockMode.Locked
             || (SurvivalSession.Instance != null && SurvivalSession.Instance.IsGameOver)) return false;
         nextMeleeAt = Time.time + Mathf.Max(0.2f, meleeCooldown);
@@ -301,8 +346,7 @@ public class GunSystem : MonoBehaviour
     public void InitNewGame()
     {
         CancelReload();
-        currentAmmo = Mathf.Max(1, magSize);
-        reserveAmmo = initialReserveAmmo;
+        Loadout = new WeaponLoadout(); ApplyActiveWeapon(false);
         nextTimeToFire = 0f;
         nextMeleeAt = meleeRecoveryUntil = 0f;
     }
@@ -310,9 +354,65 @@ public class GunSystem : MonoBehaviour
     public void ApplyLoadedGun(string armaNome, int ammoMag, int ammoReserva)
     {
         CancelReload();
-        if (!string.IsNullOrWhiteSpace(armaNome)) gunName = armaNome;
-        currentAmmo = Mathf.Clamp(ammoMag, 0, Mathf.Max(1, magSize));
-        reserveAmmo = Mathf.Clamp(ammoReserva, 0, Mathf.Max(1, maxReserveAmmo));
+        Loadout = WeaponLoadout.FromLegacy(armaNome, ammoMag, ammoReserva); ApplyActiveWeapon(false);
+    }
+
+    public string CaptureLoadout() { SyncAmmo(); return Loadout.Encode(); }
+    public void RestoreLoadout(string encoded, string legacyName, int magazine, int reserve)
+    {
+        CancelReload();
+        Loadout = WeaponLoadout.TryDecode(encoded, out WeaponLoadout parsed) ? parsed : WeaponLoadout.FromLegacy(legacyName, magazine, reserve);
+        ApplyActiveWeapon(false);
+    }
+    private void SyncAmmo()
+    {
+        Loadout.Current.Magazine = Mathf.Clamp(currentAmmo, 0, magSize);
+        Loadout.Current.Reserve = Mathf.Clamp(reserveAmmo, 0, maxReserveAmmo);
+    }
+    public bool TrySwitchWeapon(int slot)
+    {
+        if (Time.timeScale <= 0 || IsSwitching || IsMeleeing || (player && player.IsDead)
+            || (SurvivalSession.Instance != null && SurvivalSession.Instance.IsGameOver)) return false;
+        SyncAmmo();
+        if (!Loadout.Switch(slot)) return false;
+        CancelReload(); ApplyActiveWeapon(true); RequestSave(); return true;
+    }
+    public bool PurchaseWeapon(WeaponId id, bool mystery = false)
+    {
+        var session = SurvivalSession.Instance;
+        if (!WeaponCatalog.IsValid(id) || session == null || session.IsGameOver || Time.timeScale <= 0 || (player && player.IsDead)) return false;
+        SyncAmmo(); int owned = Loadout.IndexOf(id); var spec = WeaponCatalog.Get(id);
+        if (owned >= 0 && Loadout.Get(owned).IsFull) { session.ShowMessage("Esta arma já tem munições completas."); return false; }
+        int cost = mystery ? 950 : owned >= 0 ? spec.AmmoPrice : spec.Price;
+        if (!session.TrySpend(cost)) return false;
+        if (owned >= 0)
+        {
+            Loadout.Get(owned).Fill();
+            if (owned == Loadout.Active) { CancelReload(); currentAmmo = magSize; reserveAmmo = maxReserveAmmo; }
+            session.ShowMessage(spec.Name + " · MUNIÇÕES COMPLETAS");
+        }
+        else
+        {
+            CancelReload(); Loadout.Acquire(id); ApplyActiveWeapon(true);
+            session.ShowMessage("EQUIPADA · " + spec.Name + " · [1]/[2] TROCAR");
+        }
+        RequestSave(); return true;
+    }
+    public void RefillAllWeapons()
+    {
+        CancelReload(); SyncAmmo(); Loadout.FillAll(); currentAmmo = Loadout.Current.Magazine; reserveAmmo = Loadout.Current.Reserve; RequestSave();
+    }
+    private void ApplyActiveWeapon(bool switching)
+    {
+        var spec = WeaponCatalog.Get(ActiveWeapon);
+        gunName = spec.Name; damage = spec.Damage; fireRate = spec.Rate; maxDistance = spec.Range;
+        magSize = spec.Magazine; maxReserveAmmo = spec.ReserveLimit; reloadTime = spec.ReloadSeconds;
+        hipSpread = spec.HipSpread; aimedSpread = spec.AimSpread; recoil = spec.Recoil;
+        currentAmmo = Loadout.Current.Magazine; reserveAmmo = Loadout.Current.Reserve;
+        IsAiming = false; switchingUntil = switching ? Time.time + .4f : 0;
+        nextTimeToFire = Mathf.Max(nextTimeToFire, switchingUntil);
+        if (ViewMotion) ViewMotion.ResetPose();
+        if (visuals) visuals.Show(ActiveWeapon);
     }
 
     void RequestSave()

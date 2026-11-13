@@ -6,13 +6,18 @@ public enum WorldService { Ammo, WeaponUpgrade, HealthUpgrade, QuickReload }
 /// <summary>A physical point of interest. Input is owned by WorldProgression, never by each station.</summary>
 public sealed class WorldInteraction : MonoBehaviour
 {
-    public enum InteractionKind { ChurchCheckpoint, GuardCheckpoint, Ammo, WeaponUpgrade, HealthUpgrade, QuickReload, ChurchGate, VillageGate, OutskirtsGate }
+    public enum InteractionKind { ChurchCheckpoint, GuardCheckpoint, Ammo, WeaponUpgrade, HealthUpgrade, QuickReload, ChurchGate, VillageGate, OutskirtsGate, Barricade, WallWeapon, MysteryBox, Shortcut }
 
     public WorldProgression Owner { get; private set; }
     public InteractionKind Kind { get; private set; }
     public string Title { get; private set; }
     public float InteractionRange { get; private set; } = 3f;
     public Transform GeometryRoot { get; private set; }
+    public WeaponId OfferedWeapon { get; private set; }
+    public int AccessZone { get; private set; }
+    public int ShortcutBit { get; private set; }
+    public void ConfigureOffer(WeaponId id, int access) { OfferedWeapon = id; AccessZone = access; }
+    public void ConfigureShortcut(int bit) { ShortcutBit = bit; }
     public Vector3 FocusPoint => transform.position + Vector3.up * 1.25f;
 
     private TextMeshPro caption;

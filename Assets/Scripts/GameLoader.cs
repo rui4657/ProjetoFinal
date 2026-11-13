@@ -28,12 +28,12 @@ public class GameLoader : MonoBehaviour
         if (loaded)
         {
             // Open saved checkpoints and restore power before validating saved position.
-            if (world != null) world.RestoreProgress(state.unlocked_zones, state.power_enabled != 0, state.round);
+            if (world != null) world.RestoreProgress(state.unlocked_zones, state.power_enabled != 0, state.round, state.shortcut_flags, state.barricades);
             if (session != null) session.ApplySavedProgress(state);
             int healthBonus = session != null ? session.HealthBonus : Mathf.Clamp(state.health_bonus, 0, 100);
             if (health != null) health.ApplyLoadedHealth(state.vida, health.MaxHP + healthBonus);
             if (gunSystem != null)
-                gunSystem.ApplyLoadedGun(state.arma_nome, state.ammo_carregador, state.ammo_reserva);
+                gunSystem.RestoreLoadout(state.weapon_loadout, state.arma_nome, state.ammo_carregador, state.ammo_reserva);
             if (rounds != null) rounds.currentRound = Mathf.Max(1, state.round);
             RestorePosition(state, movement, world, initialPosition, session);
         }

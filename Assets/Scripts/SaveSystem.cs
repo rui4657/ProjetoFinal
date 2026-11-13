@@ -121,6 +121,7 @@ public class SaveSystem : MonoBehaviour
         {
             vida = player.CurrentHP, arma_nome = gun.gunName,
             ammo_carregador = gun.currentAmmo, ammo_reserva = gun.reserveAmmo,
+            weapon_loadout = gun.CaptureLoadout(),
             round = rounds != null ? Mathf.Max(1, rounds.currentRound) : 1,
             pos_x = position.x, pos_y = position.y, pos_z = position.z, has_position = 1
         };
@@ -146,6 +147,8 @@ public class SaveSystem : MonoBehaviour
         {
             state.unlocked_zones = world.UnlockedZones;
             state.power_enabled = world.PowerEnabled ? 1 : 0;
+            state.shortcut_flags = world.ShortcutFlags;
+            state.barricades = world.Barricades.Ledger.Encode();
         }
     }
 

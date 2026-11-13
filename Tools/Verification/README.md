@@ -1,6 +1,6 @@
 # Verificação sem Editor Unity
 
-Este harness compila **os scripts reais do projeto** com Roslyn e executa 75 cenários de regressão. Não precisa de NuGet nem inclui dependências binárias novas.
+Este harness compila **os scripts reais do projeto** com Roslyn e executa 96 cenários de regressão. Não precisa de NuGet nem inclui dependências binárias novas.
 
 Requisitos: Python 3, .NET SDK 8 ou superior e SQLite 3 nativo. Foi executado em Debian Linux; o runner também prevê a DLL SQLite x64 já existente no projeto para Windows, mas esse caminho não foi testado aqui.
 
@@ -17,8 +17,8 @@ Os assemblies e bases de dados de teste são criados numa pasta temporária e ap
 ## O que é verificado
 
 - **Waves — 9 cenários:** morte antes do fim dos spawns; conclusão exata de uma ronda; mortes duplicadas; limite de zombies ativos sem descartar a fila; falhas de spawn limitadas; configuração ausente; pausa; fim da partida; limites da curva de dificuldade.
-- **Database — 12 cenários:** SQLite real, DLL real e `Database.cs`/`GameState.cs` reais; criação do schema sem inventar um save; snapshots; migrações dos formatos antigos e do progresso de mundo/tempo; idempotência; parâmetros SQL; cultura `pt-PT`; saves mortos; eliminação por slot; dados corrompidos; tempo inválido e flags.
-- **Gameplay — 54 cenários:** compila todos os scripts próprios em `Assets/Scripts`; economia, limites e compras; munições/recarga; debounce; morte/reset/restauro; ESC e regeneração; buffs e pausa; limite/expiração/oclusão dos drops; gravação de checkpoints/tempo; compras físicas com proximidade/LOS e uma cobrança por E; requisitos de energia também no arsenal B; posição inválida; melee sem disparo simultâneo; preservação da pose da arma e curvas de recarga; stagger limitado e ataques entre pisos; morte única; migração do posto antigo; preferência de conforto; falhas de placement sem postos fictícios/softlock; objetivos que avançam para melhorias em falta. Os 15 novos cenários cobrem calendário e atributos das variantes, limites de vida, cabeça do rig e dano 5×, exclusividade/oclusão/pausa/expiração do ácido, limites de zonas, estado conjunto de colliders/obstacles, contenção de passagem indevida, abertura gratuita/restauro, rejeição de spawns inválidos, descoberta do NavMesh, ativação do ragdoll e queda de fallback.
+- **Database — 15 cenários:** SQLite real, DLL real e `Database.cs`/`GameState.cs` reais; criação do schema sem inventar um save; snapshots; migrações dos formatos antigos e do progresso de mundo/tempo; idempotência; parâmetros SQL; cultura `pt-PT`; saves mortos; eliminação por slot; dados corrompidos; tempo inválido e flags. Inclui inventário/barricadas/atalhos, migração da AK e limites de texto/bits.
+- **Gameplay — 72 cenários:** compila todos os scripts próprios em `Assets/Scripts`; economia, limites e compras; munições/recarga; debounce; morte/reset/restauro; ESC e regeneração; buffs e pausa; limite/expiração/oclusão dos drops; gravação de checkpoints/tempo; compras físicas com proximidade/LOS; requisitos de energia; posição inválida; melee; pose da arma; stagger; morte única; migração de postos; conforto; placement e objetivos. Abrange também variantes, ácido, headshots 5×, setores, colliders/obstacles, contenção, spawns e ragdoll. Os 18 cenários desta fase acrescentam pistola inicial, input semi/automático, conservação/substituição das duas armas, compras de munições, inventário inválido, projéteis da caçadeira/oclusão/estatísticas, recarga interrompível por cartucho, munições máximas nas duas armas, troca de modelos/muzzle, limite de recompensas, E mantido, ataques e transposição das janelas, entradas únicas, atalhos, caixa misteriosa e continuação completa via SQLite.
 
 ## Limites
 

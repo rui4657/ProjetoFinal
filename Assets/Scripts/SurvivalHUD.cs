@@ -58,10 +58,10 @@ public sealed class SurvivalHUD : MonoBehaviour
         healthFill = Bar(vital, new Vector2(18, -86), new Vector2(254, 6), red);
         staminaFill = Bar(vital, new Vector2(18, -101), new Vector2(254, 3), paper);
 
-        var gun = Panel("Weapon", playRoot.transform, new Vector2(1, 0), new Vector2(-48, 48), new Vector2(300, 118));
-        weapon = Label(gun, "AK", 16, gold, new Vector2(20, -14), new Vector2(260, 26));
-        ammo = Label(gun, "30 / 120", 42, paper, new Vector2(18, -41), new Vector2(268, 56));
-        reloadFill = Bar(gun, new Vector2(20, -103), new Vector2(260, 3), gold);
+        var gun = Panel("Weapon", playRoot.transform, new Vector2(1, 0), new Vector2(-48, 48), new Vector2(330, 144));
+        weapon = Label(gun, "PX-9", 16, gold, new Vector2(20, -12), new Vector2(290, 52));
+        ammo = Label(gun, "12 / 60", 42, paper, new Vector2(18, -65), new Vector2(295, 56));
+        reloadFill = Bar(gun, new Vector2(20, -130), new Vector2(290, 3), gold);
 
         points = CenterLabel(playRoot.transform, "500  PONTOS", 23, gold, new Vector2(0, 1), new Vector2(0, -52), new Vector2(420, 36));
         bonus = CenterLabel(playRoot.transform, "", 20, gold, new Vector2(0, 1), new Vector2(0, -87), new Vector2(240, 30));
@@ -97,7 +97,7 @@ public sealed class SurvivalHUD : MonoBehaviour
         Label(card, "ARSENAL", 48, paper, new Vector2(48, -40), new Vector2(850, 65));
         Label(card, "MELHORA O TEU EQUIPAMENTO ENTRE RONDAS", 16, muted, new Vector2(50, -108), new Vector2(850, 30));
         shopBalance = Label(card, "", 24, gold, new Vector2(50, -153), new Vector2(850, 40));
-        ammoButton = Offer(card, 218, "MUNIÇÕES", "Carregador e reserva completos", session.BuyAmmo, out ammoOffer);
+        ammoButton = Offer(card, 218, "MUNIÇÕES", "Carregador e reserva da arma equipada", session.BuyAmmo, out ammoOffer);
         weaponButton = Offer(card, 326, "ARSENAL REFORÇADO", "+50% de dano por nível · máximo 3 níveis", session.BuyWeaponUpgrade, out weaponOffer);
         healthButton = Offer(card, 434, "FORTITUDE", "+50 vida máxima · máximo 2 melhorias", session.BuyHealthUpgrade, out healthOffer);
         reloadButton = Offer(card, 542, "RECARGA RÁPIDA", "Reduz o tempo de recarga em 35%", session.BuyQuickReload, out reloadOffer);
@@ -151,13 +151,14 @@ public sealed class SurvivalHUD : MonoBehaviour
         health.color = p != null && p.CurrentHP <= p.MaxHP * 0.3f ? red : paper;
         ammo.text = g != null ? g.currentAmmo + "<size=48%><color=#929FA3> / " + g.reserveAmmo + "</color></size>" : "—";
         ammo.color = g != null && g.currentAmmo <= 5 ? gold : paper;
-        weapon.text = g != null ? g.gunName.ToUpperInvariant() + (session.WeaponTier > 0 ? "  ·  NÍVEL " + session.WeaponTier : "") : "";
+        weapon.text = g != null ? g.gunName.ToUpperInvariant() + (session.WeaponTier > 0 ? "  ·  NÍVEL " + session.WeaponTier : "")
+            + "\n<size=65%>" + SlotText(g, 0) + "   " + SlotText(g, 1) + "</size>" : "";
         points.text = session.Points.ToString("N0") + "  PONTOS";
         bonus.text = Time.unscaledTime < session.PointsPopupUntil ? "+" + session.LastPointsAwarded : "";
         notice.text = Time.unscaledTime < session.MessageUntil ? session.Message : "";
         round.text = r != null ? r.currentRound.ToString("00") : "01";
         remaining.text = r == null ? "" : r.inIntermission ? "PREPARAÇÃO" : r.ZombiesRemaining + " INIMIGOS RESTANTES";
-        countdown.text = r != null && r.inIntermission ? "PRÓXIMA RONDA EM " + Mathf.CeilToInt(r.intermissionTimer) + "s\n[B] ARSENAL   ·   [ENTER] COMEÇAR AGORA" : "[SHIFT] CORRER   ·   [V] CORPO A CORPO   ·   [R] RECARREGAR   ·   [ESC] PAUSA";
+        countdown.text = r != null && r.inIntermission ? "PRÓXIMA RONDA EM " + Mathf.CeilToInt(r.intermissionTimer) + "s\n[B] ARSENAL   ·   [ENTER] COMEÇAR AGORA" : "[1]/[2]/[Q] ARMAS   ·   [V] CORPO A CORPO   ·   [R] RECARREGAR   ·   [ESC] PAUSA";
         if (r != null && r.HasSpawnError) countdown.text = "NÃO FOI POSSÍVEL INICIAR A RONDA. [ESC] PARA REGRESSAR AO MENU.";
         interaction.text = Time.unscaledTime < session.InteractionUntil ? session.InteractionPrompt : g != null && g.IsReloading ? "A RECARREGAR…" : g != null && g.currentAmmo == 0 && g.reserveAmmo == 0 ? "SEM MUNIÇÕES · PROCURA O POSTO DE REABASTECIMENTO" : "";
         buffs.text = (session.DoublePointsActive ? "2× PONTOS  " + Mathf.CeilToInt(session.DoublePointsRemaining) + "s" : "") +
@@ -252,6 +253,13 @@ public sealed class SurvivalHUD : MonoBehaviour
         var fillRect = Rect("Fill", r, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
         var fill = fillRect.gameObject.AddComponent<Image>(); fill.color = color; fill.raycastTarget = false;
         return fill;
+    }
+
+    static string SlotText(GunSystem gun, int index)
+    {
+        var slot = gun.Loadout.Get(index);
+        return "[" + (index + 1) + "] " + (slot == null ? "VAZIO" : WeaponCatalog.Get(slot.Id).Name)
+            + (gun.Loadout.Active == index ? " •" : "");
     }
 
     static void SetBar(Image image, float amount)

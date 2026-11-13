@@ -16,6 +16,20 @@ public sealed class WorldProgression : MonoBehaviour
     public bool ProgressionUnavailable => built && (church == null || generator == null);
     public bool HasObjectiveLocation => NextObjectiveStation != null;
     public Vector3 SafeSpawn { get; private set; }
+    public int ShortcutFlags { get; private set; }
+    private BarricadeNetwork barricades;
+    public BarricadeNetwork Barricades
+    {
+        get
+        {
+            if (barricades == null)
+            {
+                var root = new GameObject("District barricades"); root.transform.SetParent(transform, false);
+                barricades = root.AddComponent<BarricadeNetwork>(); barricades.Initialize(this);
+            }
+            return barricades;
+        }
+    }
     public WorldInteraction FocusedInteraction => focused;
     public bool ConsumedInteractionThisFrame => lastActivationFrame == Time.frameCount;
 
@@ -100,11 +114,13 @@ public sealed class WorldProgression : MonoBehaviour
 
     private void Start() => BuildWorld();
 
-    public void RestoreProgress(int zones, bool power, int round = 1)
+    public void RestoreProgress(int zones, bool power, int round = 1, int shortcuts = 0, string barricadeState = null)
     {
         UnlockedZones = QuarantineRules.ForRound(zones, round);
         PowerEnabled = power;
         if (PowerEnabled) UnlockedZones = QuarantineRules.Normalize(UnlockedZones | GuardZone);
+        ShortcutFlags = (UnlockedZones & GuardZone) != 0 ? Mathf.Max(0, shortcuts) & 3 : 0;
+        Barricades.Restore(barricadeState);
         if (perimeter != null) perimeter.ApplyProgress(UnlockedZones);
         nextPresentation = 0f;
     }
@@ -157,7 +173,7 @@ public sealed class WorldProgression : MonoBehaviour
         if (focused != null)
         {
             session.ShowInteraction("[E] " + focused.Title + " · " + Detail(focused));
-            if (Input.GetKeyDown(KeyCode.E)) TryActivate(focused);
+            if (Input.GetKeyDown(KeyCode.E) || (focused.Kind == WorldInteraction.InteractionKind.Barricade && Input.GetKey(KeyCode.E))) TryActivate(focused);
         }
         if (Time.unscaledTime >= nextPresentation)
         {
@@ -173,6 +189,7 @@ public sealed class WorldProgression : MonoBehaviour
                 if (station.Kind == WorldInteraction.InteractionKind.ChurchGate) { checkpoint = true; complete = (UnlockedZones & ChurchZone) != 0; }
                 if (station.Kind == WorldInteraction.InteractionKind.VillageGate) { checkpoint = true; complete = (UnlockedZones & GuardZone) != 0; }
                 if (station.Kind == WorldInteraction.InteractionKind.OutskirtsGate) { checkpoint = true; complete = (UnlockedZones & QuarantineRules.Outskirts) != 0; }
+                if (station.Kind == WorldInteraction.InteractionKind.Shortcut) { checkpoint = true; complete = (ShortcutFlags & station.ShortcutBit) != 0; }
                 station.RefreshPresentation(Detail(station), !checkpoint && ServiceUnlocked(station), complete, station == focused);
             }
         }
@@ -183,6 +200,28 @@ public sealed class WorldProgression : MonoBehaviour
         var session = SurvivalSession.Instance;
         if (!IsPlaying(session) || !CanReach(station) || lastActivationFrame == Time.frameCount) return false;
         lastActivationFrame = Time.frameCount;
+        if (station.Kind == WorldInteraction.InteractionKind.Barricade)
+        {
+            var entry = station.GetComponent<BarricadeEntry>();
+            return entry != null && entry.TryRepair();
+        }
+        if (station.Kind == WorldInteraction.InteractionKind.Shortcut)
+        {
+            if ((UnlockedZones & GuardZone) == 0) { session.ShowMessage("O atalho fica disponível depois de abrir a vila."); return false; }
+            int bit = station.ShortcutBit;
+            if ((bit != 1 && bit != 2) || (ShortcutFlags & bit) != 0 || !session.TrySpend(SurvivalMapLayout.ShortcutCost)) return false;
+            ShortcutFlags |= bit; if (perimeter != null) perimeter.ApplyProgress(UnlockedZones);
+            session.ShowMessage("ATALHO ABERTO · NOVO PERCURSO DISPONÍVEL"); SaveProgress(); return true;
+        }
+        if (station.Kind == WorldInteraction.InteractionKind.WallWeapon || station.Kind == WorldInteraction.InteractionKind.MysteryBox)
+        {
+            if ((UnlockedZones & station.AccessZone) != station.AccessZone) { session.ShowMessage("Abre primeiro esta zona."); return false; }
+            if (session.Gun == null) return false;
+            if (station.Kind == WorldInteraction.InteractionKind.MysteryBox)
+            { var rack = station.GetComponent<WeaponRack>(); return rack != null && rack.TryMysteryPurchase(); }
+            bool bought = session.Gun.PurchaseWeapon(station.OfferedWeapon);
+            if (bought) SaveProgress(); return bought;
+        }
         if (ProgressionUnavailable && (station.Kind == WorldInteraction.InteractionKind.ChurchCheckpoint
             || station.Kind == WorldInteraction.InteractionKind.GuardCheckpoint))
         {
@@ -292,6 +331,20 @@ public sealed class WorldProgression : MonoBehaviour
         var session = SurvivalSession.Instance;
         switch (station.Kind)
         {
+            case WorldInteraction.InteractionKind.Barricade:
+                var entry = station.GetComponent<BarricadeEntry>();
+                return entry == null ? "INDISPONÍVEL" : entry.Planks >= 6 ? "COMPLETA · 6/6 TÁBUAS" : "MANTÉM [E] · REPARAR " + entry.Planks + "/6";
+            case WorldInteraction.InteractionKind.Shortcut:
+                return (ShortcutFlags & station.ShortcutBit) != 0 ? "ABERTO" : (UnlockedZones & GuardZone) == 0 ? "REQUER ACESSO À VILA" : "650 PTS · ABRIR PERCURSO ALTERNATIVO";
+            case WorldInteraction.InteractionKind.WallWeapon:
+                var spec = WeaponCatalog.Get(station.OfferedWeapon);
+                var gun = session != null ? session.Gun : null;
+                int owned = gun != null ? gun.Loadout.IndexOf(spec.Id) : -1;
+                return owned >= 0 ? spec.AmmoPrice + " PTS · MUNIÇÕES " + spec.Name
+                    : spec.Price + " PTS · " + spec.Name + (gun != null && gun.Loadout.Get(1) != null ? " · SUBSTITUI " + gun.gunName : " · SEGUNDA ARMA");
+            case WorldInteraction.InteractionKind.MysteryBox:
+                var rack = station.GetComponent<WeaponRack>();
+                return rack != null && !rack.IsReady ? "A REARMAR…" : "950 PTS · ARMA ALEATÓRIA · SUBSTITUI A ATUAL SE TIVERES DUAS";
             case WorldInteraction.InteractionKind.ChurchGate: return (UnlockedZones & ChurchZone) != 0 ? "ABERTO" : "750 PTS · AUTOMÁTICO NA RONDA 3";
             case WorldInteraction.InteractionKind.VillageGate: return (UnlockedZones & GuardZone) != 0 ? "ABERTO" : "1250 PTS · AUTOMÁTICO NA RONDA 5";
             case WorldInteraction.InteractionKind.OutskirtsGate: return (UnlockedZones & QuarantineRules.Outskirts) != 0 ? "ABERTO" : "ABRE NA RONDA 8";
@@ -353,6 +406,7 @@ public sealed class WorldProgression : MonoBehaviour
         }
         Place("Reabastecimento inicial", WorldInteraction.InteractionKind.Ammo,
             "REABASTECIMENTO", SafeSpawn + new Vector3(-3f, -1f, 3f), "FieldCabinet");
+        gameObject.AddComponent<WorldMapDesign>().Build(this);
         // Place services before carving the closed gates, then make each district physically inaccessible.
         perimeter = QuarantineZones.Create(this);
         church = perimeter.PortalFor(ChurchZone);
@@ -360,8 +414,8 @@ public sealed class WorldProgression : MonoBehaviour
         outskirtsDoor = perimeter.PortalFor(QuarantineRules.Outskirts);
     }
 
-    private WorldInteraction Place(string name, WorldInteraction.InteractionKind kind, string title,
-        Vector3 preferred, string resource)
+    internal WorldInteraction Place(string name, WorldInteraction.InteractionKind kind, string title,
+        Vector3 preferred, string resource, bool controlPanel = true)
     {
         if (!TryReachableGround(preferred, out Vector3 landing))
         {
@@ -376,7 +430,7 @@ public sealed class WorldProgression : MonoBehaviour
         Vector3 facing = SafeSpawn - root.transform.position;
         facing.y = 0f;
         if (facing.sqrMagnitude > 0.01f) root.transform.rotation = Quaternion.LookRotation(facing);
-        var prefab = Resources.Load<GameObject>("World/" + resource);
+        var prefab = string.IsNullOrEmpty(resource) ? null : Resources.Load<GameObject>("World/" + resource);
         if (prefab != null)
         {
             var prop = Instantiate(prefab, root.transform);
@@ -388,11 +442,11 @@ public sealed class WorldProgression : MonoBehaviour
         }
         var station = root.AddComponent<WorldInteraction>();
         station.Configure(this, kind, title);
-        station.BuildPresentation(false);
+        if (controlPanel) station.BuildPresentation(false);
         return station;
     }
 
-    private bool TryReachableGround(Vector3 desired, out Vector3 landing)
+    internal bool TryReachableGround(Vector3 desired, out Vector3 landing)
     {
         landing = Vector3.zero;
         if (hasNavigation)

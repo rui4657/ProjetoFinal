@@ -1,5 +1,8 @@
 # Zonas, variantes e mortes
 
+A fase seguinte acrescenta [mapa, barricadas e armas](MAPA_BARRICADAS_E_ARMAS.md): a partida nova começa com
+PX-9, há dois espaços de equipamento, 11 entradas reparáveis e dois atalhos. Os portões descritos abaixo mantêm-se.
+
 Esta revisão responde ao mapa livre apesar dos checkpoints, à pouca dificuldade e aos cadáveres em pose aberta.
 O cenário Flooded Grounds é conservado, mas passa a ter limites físicos e progressão de áreas.
 
@@ -43,7 +46,7 @@ No máximo ficam ativos três cuspidores e dois brutamontes; há limite global d
 
 A primeira ronda tem 12 inimigos, as ondas crescem mais e o intervalo de geração diminui com as rondas.
 A regeneração só começa após 6,5 s sem dano e recupera 8 de vida por segundo.
-A AK inicial passa a 20 de dano, com **headshots a 5×**; a cabeça do esqueleto tem hitbox própria.
+A AK tem 20 de dano, com **headshots a 5×**; a cabeça do esqueleto tem hitbox própria.
 
 ## Geração e morte
 
@@ -61,7 +64,7 @@ uma queda simples de fallback, em vez de aguardar de pé numa pose aberta.
 
 ## Verificar no Unity 6000.2.8f1
 
-Passaram **75 testes fora do Unity**: 9 de rondas, 12 com SQLite real e 54 de gameplay com APIs
+Passaram **96 testes fora do Unity**: 9 de rondas, 15 com SQLite real e 72 de gameplay com APIs
 do motor substituídas. Validam lógica e transições de estado, sem simular fisicamente os ragdolls,
 o carving ou os importers. Não foi possível executar o Editor nem criar uma build neste ambiente.
 
@@ -71,7 +74,7 @@ o carving ou os importers. Não foi possível executar o Editor nem criar uma bu
 4. Repetir o comando durante Play. Além dos assets, verifica colliders, obstáculos e raios físicos dos portões.
 5. Comprar a igreja ou chegar à ronda 3; atravessar a passagem. Repetir para a vila na ronda 5 e saídas na ronda 8. Confirmar também que os zombies atravessam portas abertas.
 6. Observar as variantes desde as rondas 2/3/5. Identificar as peles/silhuetas e verificar que só o cuspidor lança ácido; esquivar e usar uma parede como cobertura.
-7. Comparar tiros no torso/cabeça; um infetado da ronda 1 morre com um headshot da AK inicial. Observar vários cadáveres a cair, incluindo perto de degraus e paredes.
+7. Comparar tiros no torso/cabeça; um infetado da ronda 1 morre com um headshot da pistola inicial. Observar vários cadáveres a cair, incluindo perto de degraus e paredes.
 8. Repetir o comando com cadáveres presentes. A pose final precisa de inspeção visual, mesmo sem erros no comando.
 9. Dar a volta às zonas abertas, observar a diversidade de spawns, sair em vida e continuar. Confirmar zona, energia, posição e pausa.
 10. Fazer build Windows e observar desempenho com 28 inimigos e vários cadáveres. Ajustes de colocação/física só podem ser confirmados no mapa real.
