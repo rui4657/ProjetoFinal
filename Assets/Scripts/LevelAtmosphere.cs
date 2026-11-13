@@ -12,17 +12,12 @@ public sealed class LevelAtmosphere : MonoBehaviour
 {
     private Camera playerCamera;
     private Transform player;
-    private Light[] practicalLights;
-    private ParticleSystem dust;
-    private Material dustMaterial;
-    private Texture2D dustTexture;
     private Material skyMaterial;
     private Material originalSkybox;
     private AudioSource windSource;
     private AudioClip windClip;
     private float nextSettingsPoll;
     private float ambienceVolume;
-    private bool motionEnabled;
 
     /// <summary>Returns the existing scene-local atmosphere, or installs one.</summary>
     public static LevelAtmosphere Ensure()
@@ -55,8 +50,6 @@ public sealed class LevelAtmosphere : MonoBehaviour
         ReadSettings();
         ApplyLighting();
         ApplyCamera();
-        AddPracticalLights();
-        CreateDust();
         CreateWind();
     }
 
@@ -66,9 +59,9 @@ public sealed class LevelAtmosphere : MonoBehaviour
         // combat space while keeping haze beyond the village's useful sightline.
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
-        RenderSettings.fogColor = new Color(0.29f, 0.34f, 0.36f);
-        RenderSettings.fogStartDistance = 38f;
-        RenderSettings.fogEndDistance = 145f;
+        RenderSettings.fogColor = new Color(0.32f, 0.35f, 0.37f);
+        RenderSettings.fogStartDistance = 55f;
+        RenderSettings.fogEndDistance = 175f;
 
         RenderSettings.ambientMode = AmbientMode.Trilight;
         RenderSettings.ambientSkyColor = new Color(0.37f, 0.43f, 0.48f);
@@ -90,11 +83,9 @@ public sealed class LevelAtmosphere : MonoBehaviour
         }
         if (sun != null)
         {
-            // Cool daylight keeps silhouettes visible; warm practicals provide
-            // local contrast. The previous direct light was ~0.03 after tint.
+            // Preserve the authored sun direction; a restrained neutral profile keeps enemies legible.
             sun.color = new Color(0.84f, 0.89f, 0.95f);
-            sun.intensity = 0.88f;
-            sun.transform.rotation = Quaternion.Euler(28f, -32f, 0f);
+            sun.intensity = 0.62f;
             sun.shadows = LightShadows.Hard;
             sun.shadowStrength = 0.72f;
             sun.shadowBias = 0.04f;
@@ -127,143 +118,6 @@ public sealed class LevelAtmosphere : MonoBehaviour
         playerCamera.nearClipPlane = Mathf.Min(playerCamera.nearClipPlane, 0.08f);
         playerCamera.farClipPlane = Mathf.Clamp(playerCamera.farClipPlane, 180f, 300f);
         playerCamera.backgroundColor = RenderSettings.fogColor;
-    }
-
-    private void AddPracticalLights()
-    {
-        practicalLights = new Light[2];
-        Transform church = FindLandmark("Pref_Church1_B");
-        if (church != null)
-        {
-            // Existing church doorway, verified against MainScene coordinates:
-            // root (455.61,17.55,579.55), entrance ~455.97 / 563.28.
-            Vector3 position = church.TransformPoint(new Vector3(0.36f, 2.45f, -16.27f));
-            practicalLights[0] = MakePractical("Church doorway glow", position,
-                new Color(1f, 0.69f, 0.40f), 2.3f, 13f);
-        }
-
-        Transform guardHouse = FindLandmark("GuardHouse");
-        if (guardHouse != null)
-        {
-            // Follow the existing façade facing the initial player position,
-            // rather than assuming the building's pivot is at its doorway.
-            Vector3 position = guardHouse.position + Vector3.up * 2.7f;
-            Renderer[] renderers = guardHouse.GetComponentsInChildren<Renderer>();
-            if (renderers.Length > 0)
-            {
-                Bounds bounds = renderers[0].bounds;
-                foreach (Renderer renderer in renderers) bounds.Encapsulate(renderer.bounds);
-                Vector3 towardsPlayer = player.position - bounds.center;
-                towardsPlayer.y = 0f;
-                if (towardsPlayer.sqrMagnitude < 0.01f) towardsPlayer = Vector3.forward;
-                towardsPlayer.Normalize();
-                Vector3 closest = bounds.ClosestPoint(new Vector3(player.position.x,
-                    bounds.center.y, player.position.z));
-                position = new Vector3(closest.x, bounds.min.y + 2.7f, closest.z)
-                    + towardsPlayer * 0.55f;
-            }
-            practicalLights[1] = MakePractical("Guardhouse doorway glow", position,
-                new Color(1f, 0.78f, 0.51f), 1.8f, 11f);
-        }
-    }
-
-    private Transform FindLandmark(string objectName)
-    {
-        foreach (GameObject root in gameObject.scene.GetRootGameObjects())
-            foreach (Transform candidate in root.GetComponentsInChildren<Transform>(true))
-                if (candidate.name == objectName && candidate.gameObject.activeInHierarchy)
-                    return candidate;
-        return null;
-    }
-
-    private Light MakePractical(string objectName, Vector3 position, Color color, float intensity, float range)
-    {
-        GameObject lamp = new GameObject(objectName);
-        lamp.transform.SetParent(transform, false);
-        lamp.transform.position = position;
-        Light light = lamp.AddComponent<Light>();
-        light.type = LightType.Point;
-        light.color = color;
-        light.intensity = intensity;
-        light.range = range;
-        light.shadows = LightShadows.None;
-        light.renderMode = LightRenderMode.Auto;
-        light.bounceIntensity = 0f;
-        return light;
-    }
-
-    private void CreateDust()
-    {
-        Shader shader = Shader.Find("Particles/Standard Unlit");
-        if (shader == null) shader = Shader.Find("Legacy Shaders/Particles/Alpha Blended");
-        if (shader == null) return; // Optional effect; lighting works without it.
-
-        dustTexture = new Texture2D(32, 32, TextureFormat.RGBA32, false);
-        dustTexture.name = "Soft dust (runtime)";
-        dustTexture.wrapMode = TextureWrapMode.Clamp;
-        for (int y = 0; y < dustTexture.height; y++)
-        {
-            for (int x = 0; x < dustTexture.width; x++)
-            {
-                float radius = new Vector2((x - 15.5f) / 15.5f, (y - 15.5f) / 15.5f).magnitude;
-                float alpha = Mathf.Pow(Mathf.Clamp01(1f - radius), 2f);
-                dustTexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-            }
-        }
-        dustTexture.Apply();
-
-        dustMaterial = new Material(shader);
-        dustMaterial.name = "Village Dust (runtime)";
-        dustMaterial.mainTexture = dustTexture;
-        if (dustMaterial.HasProperty("_Mode")) dustMaterial.SetFloat("_Mode", 2f);
-        if (dustMaterial.HasProperty("_SrcBlend")) dustMaterial.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-        if (dustMaterial.HasProperty("_DstBlend")) dustMaterial.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-        if (dustMaterial.HasProperty("_ZWrite")) dustMaterial.SetInt("_ZWrite", 0);
-        dustMaterial.EnableKeyword("_ALPHABLEND_ON");
-        dustMaterial.renderQueue = (int)RenderQueue.Transparent;
-
-        GameObject dustObject = new GameObject("Village airborne dust");
-        dustObject.transform.SetParent(transform, false);
-        dustObject.transform.position = player.position + Vector3.up * 3f;
-        dust = dustObject.AddComponent<ParticleSystem>();
-        dust.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-        ParticleSystem.MainModule main = dust.main;
-        main.loop = true;
-        main.playOnAwake = false;
-        main.startLifetime = new ParticleSystem.MinMaxCurve(9f, 14f);
-        main.startSpeed = 0.025f;
-        main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.075f);
-        main.startColor = new Color(0.82f, 0.87f, 0.85f, 0.16f);
-        main.maxParticles = 36;
-        main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.cullingMode = ParticleSystemCullingMode.Pause;
-
-        ParticleSystem.EmissionModule emission = dust.emission;
-        emission.rateOverTime = 2.2f;
-        ParticleSystem.ShapeModule shape = dust.shape;
-        shape.shapeType = ParticleSystemShapeType.Box;
-        shape.scale = new Vector3(22f, 7f, 22f);
-        ParticleSystem.VelocityOverLifetimeModule velocity = dust.velocityOverLifetime;
-        velocity.enabled = true;
-        velocity.space = ParticleSystemSimulationSpace.World;
-        velocity.x = 0.055f;
-        velocity.y = 0.018f;
-        velocity.z = 0.025f;
-
-        Gradient fade = new Gradient();
-        fade.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
-            new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.2f),
-                new GradientAlphaKey(1f, 0.75f), new GradientAlphaKey(0f, 1f) });
-        ParticleSystem.ColorOverLifetimeModule color = dust.colorOverLifetime;
-        color.enabled = true;
-        color.color = new ParticleSystem.MinMaxGradient(fade);
-
-        ParticleSystemRenderer renderer = dust.GetComponent<ParticleSystemRenderer>();
-        renderer.sharedMaterial = dustMaterial;
-        renderer.shadowCastingMode = ShadowCastingMode.Off;
-        renderer.receiveShadows = false;
-        renderer.maxParticleSize = 0.015f;
-        if (motionEnabled) dust.Play();
     }
 
     private void CreateWind()
@@ -306,14 +160,8 @@ public sealed class LevelAtmosphere : MonoBehaviour
 
     private void ReadSettings()
     {
-        ambienceVolume = 0.12f * Mathf.Clamp01(PlayerPrefs.GetFloat("opt_volume", 1f));
-        motionEnabled = PlayerPrefs.GetInt("opt_motion", 1) != 0;
-        if (dust != null)
-        {
-            if (motionEnabled && !dust.isPlaying) dust.Play();
-            else if (!motionEnabled && dust.isPlaying)
-                dust.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-        }
+        ambienceVolume = 0.08f; // AudioListener already applies the master-volume preference.
+
     }
 
     private void Update()
@@ -323,12 +171,7 @@ public sealed class LevelAtmosphere : MonoBehaviour
         {
             nextSettingsPoll = Time.unscaledTime + 0.5f;
             ReadSettings();
-            if (dust != null)
-                dust.transform.position = player.position + Vector3.up * 3f;
-            if (practicalLights != null)
-                foreach (Light lamp in practicalLights)
-                    if (lamp != null)
-                        lamp.enabled = (lamp.transform.position - playerCamera.transform.position).sqrMagnitude < 65f * 65f;
+
         }
         if (windSource != null)
         {
@@ -346,8 +189,6 @@ public sealed class LevelAtmosphere : MonoBehaviour
             if (RenderSettings.skybox == skyMaterial) RenderSettings.skybox = originalSkybox;
             Destroy(skyMaterial);
         }
-        if (dustMaterial != null) Destroy(dustMaterial);
-        if (dustTexture != null) Destroy(dustTexture);
         if (windClip != null) Destroy(windClip);
     }
 }

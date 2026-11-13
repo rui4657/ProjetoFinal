@@ -22986,7 +22986,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RoundManager
   currentRound: 1
   zombiesPerRound: 5
-  spawnRate: 1.5
+  spawnRate: 1
   intermissionTime: 12
   initialPreparationTime: 8
   intermissionTimer: 0
@@ -60264,7 +60264,7 @@ Transform:
   m_GameObject: {fileID: 1704590592}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 445.367, y: 17.83, z: 563.14}
+  m_LocalPosition: {x: 445.367, y: 17.83, z: 555.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -60287,8 +60287,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   controller: {fileID: 1704590593}
   speed: 6
-  gravity: -9.81
-  jumpHeight: 1.5
+  gravity: -24
+  jumpHeight: 1.2
   groundCheck: {fileID: 412494599}
   groundDistance: 0.4
   groundMask:
@@ -69440,7 +69440,8 @@ MonoBehaviour:
   player: {fileID: 1704590596}
   fireRate: 8
   maxDistance: 100
-  damage: 15
+  damage: 20
+  headshotMultiplier: 5
   hitMask:
     serializedVersion: 2
     m_Bits: 4294967291

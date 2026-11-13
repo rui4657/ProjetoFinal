@@ -8,8 +8,8 @@ public class RoundManager : MonoBehaviour
     [Min(1)] public int currentRound = 1;
     [Min(1)] public int zombiesPerRound = 5;
     [Min(0.1f)] public float spawnRate = 1.5f;
-    [Min(1)] public int maximumActiveZombies = 24;
-    [Min(0.1f)] public float minimumSpawnInterval = 0.35f;
+    [Min(1)] public int maximumActiveZombies = 28;
+    [Min(0.1f)] public float minimumSpawnInterval = 0.28f;
     [Min(1)] public int maximumSpawnFailures = 8;
 
     [Header("Preparation")]
@@ -74,6 +74,7 @@ public class RoundManager : MonoBehaviour
         zombiesSpawned = 0;
         zombiesAlive = 0;
         pendingSpawns = GetWaveSize(currentRound, zombiesPerRound);
+        spawner.BeginRound(currentRound);
         IsSpawning = true;
         spawnRoutine = StartCoroutine(SpawnWave());
     }
@@ -81,7 +82,7 @@ public class RoundManager : MonoBehaviour
     // A bounded curve keeps later waves playable without spawning thousands of objects.
     public static int GetWaveSize(int round, int baseCount)
     {
-        return Mathf.Clamp(Mathf.Clamp(baseCount, 1, 250) + Mathf.Clamp(round, 1, 1000) * 5, 1, 250);
+        return Mathf.Clamp(Mathf.Clamp(baseCount, 1, 250) + Mathf.Clamp(round, 1, 1000) * 7, 1, 250);
     }
 
     private IEnumerator SpawnWave()
@@ -107,7 +108,7 @@ public class RoundManager : MonoBehaviour
                 yield break;
             }
 
-            float interval = Mathf.Max(minimumSpawnInterval, spawnRate * Mathf.Pow(0.96f, Mathf.Clamp(currentRound - 1, 0, 100)));
+            float interval = Mathf.Max(minimumSpawnInterval, Mathf.Min(spawnRate, 1f) * Mathf.Pow(0.91f, Mathf.Clamp(currentRound - 1, 0, 100)));
             yield return new WaitForSeconds(Mathf.Max(0.1f, interval));
         }
 

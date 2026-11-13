@@ -20,6 +20,7 @@ namespace UnityEngine {
  }
  public static class Mathf {
   public static int Max(int a,int b)=>Math.Max(a,b); public static float Max(float a,float b)=>Math.Max(a,b);
+  public static float Min(float a,float b)=>Math.Min(a,b);
   public static int Clamp(int a,int min,int max)=>Math.Max(min,Math.Min(max,a));
   public static float Clamp(float a,float min,float max)=>Math.Max(min,Math.Min(max,a));
   public static float Pow(float a,float b)=>(float)Math.Pow(a,b);
@@ -34,6 +35,7 @@ public class SurvivalSession {
  public void OnRoundCompleted(int round){Completed.Add(round);}
 }
 public class ZombieSpawner {
+ public void BeginRound(int round){}
  public bool IsConfigured=true; public int Attempts; public readonly Queue<bool> Outcomes=new Queue<bool>();
  public bool SpawnZombie(int round,RoundManager owner){Attempts++;return Outcomes.Count==0||Outcomes.Dequeue();}
 }

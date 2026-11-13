@@ -4,6 +4,15 @@ using UnityEngine.AI;
 
 public class ZombieAI : MonoBehaviour
 {
+    public ZombieArchetype archetype = ZombieArchetype.Walker;
+    public string DisplayName => ZombieProfiles.Get(archetype).Name;
+    private ZombieRagdoll ragdoll;
+    private Vector3 lastHitDirection;
+    private float nextRangedAttack;
+    private Transform headBone;
+    public bool HasHeadBone => headBone != null;
+    public bool IsHeadHit(Vector3 point) => headBone != null &&
+        Mathf.Abs(point.y - (headBone.position.y + .05f * transform.lossyScale.y)) <= Mathf.Max(.22f, .16f * transform.lossyScale.y);
     private NavMeshAgent agent;
     private Transform target;
     private PlayerHealth playerHealth;
@@ -20,9 +29,7 @@ public class ZombieAI : MonoBehaviour
     private readonly RaycastHit[] obstructionHits = new RaycastHit[16];
     private bool hasSpeedParameter;
     private bool hasAttackParameter;
-    private bool hasDeadParameter;
     private bool hasHurtParameter;
-    private bool hasHeadshotParameter;
     private bool hasAnimationRateParameter;
     private bool hasCycleOffsetParameter;
     private bool attackInterrupted;
@@ -67,7 +74,7 @@ public class ZombieAI : MonoBehaviour
     public string deathStateName = "death1";
     public string headshotDeathStateName = "death2";
     public string hurtTrigger = "Hurt";
-    [Min(0.1f)] public float walkAnimationSpeed = 2f;
+    [Min(0.1f)] public float walkAnimationSpeed = 3f;
     [Min(0.1f)] public float runAnimationSpeed = 4.4f;
 
     [Header("Hit reaction")]
@@ -106,6 +113,12 @@ public class ZombieAI : MonoBehaviour
         baseHealth = Mathf.Max(1, maxHealth);
         currentHealth = baseHealth;
         baseSpeed = agent != null ? agent.speed : 3.5f;
+        var profile = ZombieProfiles.Get(archetype);
+        baseHealth = profile.Health; currentHealth = baseHealth; baseSpeed = profile.Speed;
+        damage = profile.Damage; attackCooldown = profile.Cooldown; attackWindup = profile.Windup;
+        attackRange = archetype == ZombieArchetype.Brute ? 2.8f : 2f;
+        if (archetype == ZombieArchetype.Brute) staggerDuration = 0;
+        else if (archetype == ZombieArchetype.Runner) { staggerDuration = .1f; staggerCooldown = 1.8f; }
         playerHealth = FindFirstObjectByType<PlayerHealth>();
         bodyCollider = GetComponent<Collider>();
         if (playerHealth != null)
@@ -120,9 +133,20 @@ public class ZombieAI : MonoBehaviour
             // The agent owns translation. Root motion and global Animator speed would
             // otherwise fight navigation or alter the timing of attacks and deaths.
             anim.applyRootMotion = false;
+            anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             if (hasCycleOffsetParameter) anim.SetFloat("CycleOffset", Random.value);
         }
         CacheVisualVariation();
+        ragdoll = GetComponent<ZombieRagdoll>();
+        if (ragdoll == null) ragdoll = gameObject.AddComponent<ZombieRagdoll>();
+        gameObject.AddComponent<ZombieAppearance>().Build(archetype);
+        Transform head = ragdoll.FindBone("Head");
+        headBone = head;
+        if (head != null)
+        {
+            var hitbox = head.gameObject.AddComponent<SphereCollider>();
+            hitbox.center = new Vector3(0, .04f, 0); hitbox.radius = .12f;
+        }
 
         if (sfx == null) sfx = GetComponent<AudioSource>();
         if (sfx == null) sfx = gameObject.AddComponent<AudioSource>();
@@ -137,14 +161,20 @@ public class ZombieAI : MonoBehaviour
 
     public void InitializeForRound(int round, RoundManager owner)
     {
+        var profile = ZombieProfiles.Get(archetype);
+        baseHealth = profile.Health; baseSpeed = profile.Speed;
+        damage = profile.Damage; attackCooldown = profile.Cooldown; attackWindup = profile.Windup;
+        attackRange = archetype == ZombieArchetype.Brute ? 2.8f : 2f;
         roundOwner = owner;
         deathReported = false;
-        int progression = Mathf.Clamp(round - 1, 0, 60);
-        maxHealth = Mathf.Clamp(Mathf.RoundToInt(baseHealth * Mathf.Pow(Mathf.Max(1f, healthGrowthPerRound), progression)), 1, 100000);
+        int progression = round <= 1 ? 0 : Mathf.Min(60, round - 1);
+        maxHealth = ZombieProfiles.HealthForRound(archetype, round);
         currentHealth = maxHealth;
         if (agent != null)
         {
-            agent.speed = Mathf.Min(Mathf.Max(0.1f, maximumMoveSpeed), baseSpeed + progression * Mathf.Max(0f, speedIncreasePerRound));
+            agent.speed = Mathf.Min(archetype == ZombieArchetype.Runner ? 7.4f : 5.2f, baseSpeed + progression * .1f);
+            agent.acceleration = archetype == ZombieArchetype.Runner ? 24 : 12;
+            agent.angularSpeed = archetype == ZombieArchetype.Runner ? 600 : 240;
             agent.stoppingDistance = Mathf.Max(0.1f, attackRange - 0.2f);
         }
     }
@@ -171,6 +201,7 @@ public class ZombieAI : MonoBehaviour
             SetAnimationSpeed(0f);
             return;
         }
+        if (archetype == ZombieArchetype.Spitter) { UpdateSpitter(); return; }
 
         if (!attacking && Time.time >= nextRepath)
         {
@@ -193,6 +224,47 @@ public class ZombieAI : MonoBehaviour
             if (facing.sqrMagnitude > 0.001f)
                 transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(facing), Time.deltaTime * 8f);
         }
+    }
+
+    private void UpdateSpitter()
+    {
+        Vector3 facing = target.position - transform.position; facing.y = 0;
+        if (facing.sqrMagnitude > .001f)
+            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(facing), Time.deltaTime * 6);
+        if (attacking) { SetAnimationSpeed(0); return; }
+        Vector3 toPlayer = target.position - transform.position;
+        float distance = toPlayer.magnitude;
+        if (Time.time >= nextRepath)
+        {
+            nextRepath = Time.time + .3f;
+            if (distance < 6)
+            {
+                Vector3 retreat = transform.position - toPlayer.normalized * 4;
+                if (NavMesh.SamplePosition(retreat, out NavMeshHit hit, 3, NavMesh.AllAreas))
+                { SetStopped(false); agent.SetDestination(hit.position); }
+            }
+            else if (distance > 13 || !HasClearAttack()) { SetStopped(false); agent.SetDestination(target.position); }
+            else SetStopped(true);
+        }
+        SetAnimationSpeed(agent.velocity.magnitude);
+        if (distance <= 19 && Time.time >= nextRangedAttack && HasClearAttack()) StartCoroutine(Spit());
+    }
+
+    private IEnumerator Spit()
+    {
+        attacking = true; attackInterrupted = false; SetStopped(true); nextRangedAttack = Time.time + attackCooldown;
+        if (anim != null && hasAttackParameter) anim.SetTrigger(attackTrigger);
+        PlayOne(attackClip, attackVol);
+        // The tell comes before the throw; the projectile aims at the player's position at release.
+        yield return new WaitForSeconds(attackWindup);
+        if (!IsDead && !RunEnded && !attackInterrupted && Time.time >= staggerUntil && playerHealth != null && HasClearAttack())
+        {
+            Vector3 origin = (headBone != null ? headBone.position : AttackOrigin + Vector3.up * .5f) + transform.forward * .45f;
+            ZombieProjectile.Launch(this, playerHealth, origin, TargetCenter, damage);
+        }
+        yield return new WaitForSeconds(.25f);
+        attacking = false;
+        if (!IsDead && !RunEnded) SetStopped(false);
     }
 
     private IEnumerator Attack()
@@ -276,6 +348,12 @@ public class ZombieAI : MonoBehaviour
         else TryStagger(headshot);
     }
 
+    public void TakeDamage(int amount, bool headshot, Vector3 direction)
+    {
+        lastHitDirection = direction;
+        TakeDamage(amount, headshot);
+    }
+
     private void TryStagger(bool headshot)
     {
         // Even automatic fire cannot keep a zombie permanently stunned.
@@ -301,22 +379,10 @@ public class ZombieAI : MonoBehaviour
         attacking = false;
         SetStopped(true);
         if (agent != null) agent.enabled = false;
+        if (ragdoll == null) ragdoll = gameObject.AddComponent<ZombieRagdoll>();
+        ragdoll.Prepare(anim);
         foreach (Collider collider in GetComponentsInChildren<Collider>()) collider.enabled = false;
-
-        SetAnimationSpeed(0f);
-        int deathState = 0;
-        bool useHeadshotDeath = false;
-        if (anim != null)
-        {
-            int headshotState = ResolveStateHash(headshotDeathStateName);
-            useHeadshotDeath = headshot && headshotState != 0;
-            if (hasAttackParameter) anim.ResetTrigger(attackTrigger);
-            if (hasHurtParameter) anim.ResetTrigger(hurtTrigger);
-            if (hasHeadshotParameter) anim.SetBool("HeadshotDeath", useHeadshotDeath);
-            if (hasDeadParameter) anim.SetBool(deadBool, true);
-            deathState = useHeadshotDeath ? headshotState : ResolveStateHash(deathStateName);
-            if (deathState != 0) anim.CrossFade(deathState, 0.06f);
-        }
+        ragdoll.Collapse(headshot, lastHitDirection);
         PlayOne(deathClip, deathVol);
         if (!powerUpRolled)
         {
@@ -324,37 +390,6 @@ public class ZombieAI : MonoBehaviour
             if (SurvivalSession.Instance != null) SurvivalSession.Instance.TryDropPowerUp(transform.position);
         }
         NotifyRoundOnce();
-        StartCoroutine(RemoveCorpse(deathState, useHeadshotDeath));
-    }
-
-    private IEnumerator RemoveCorpse(int deathState, bool headshot)
-    {
-        // Source FBX deaths last 6.63s / 4.96s. The old 2s timeout removed a body
-        // before the fall finished. Read the evaluated state too, for custom clips.
-        float lifetime = deathAnim != null ? deathAnim.length : (headshot ? 5.2f : 6.8f);
-        lifetime = Mathf.Max(Mathf.Max(0.1f, destroyDelay), lifetime);
-        yield return null;
-        if (anim != null && anim.isActiveAndEnabled)
-        {
-            AnimatorStateInfo state = anim.GetCurrentAnimatorStateInfo(0);
-            if (anim.IsInTransition(0)) state = anim.GetNextAnimatorStateInfo(0);
-            if ((state.shortNameHash == deathState || state.fullPathHash == deathState) && state.length > 0f)
-            {
-                float playback = Mathf.Max(0.1f, Mathf.Abs(state.speed * state.speedMultiplier * anim.speed));
-                lifetime = Mathf.Max(lifetime, state.length / playback + 0.25f);
-            }
-        }
-        yield return new WaitForSeconds(lifetime);
-        Destroy(gameObject);
-    }
-
-    private int ResolveStateHash(string stateName)
-    {
-        if (anim == null || string.IsNullOrEmpty(stateName)) return 0;
-        int hash = Animator.StringToHash(stateName);
-        if (anim.HasState(0, hash)) return hash;
-        hash = Animator.StringToHash("Base Layer." + stateName);
-        return anim.HasState(0, hash) ? hash : 0;
     }
 
     private void NotifyRoundOnce()
@@ -382,9 +417,7 @@ public class ZombieAI : MonoBehaviour
         {
             if (parameter.name == speedParam && parameter.type == AnimatorControllerParameterType.Float) hasSpeedParameter = true;
             if (parameter.name == attackTrigger && parameter.type == AnimatorControllerParameterType.Trigger) hasAttackParameter = true;
-            if (parameter.name == deadBool && parameter.type == AnimatorControllerParameterType.Bool) hasDeadParameter = true;
             if (parameter.name == hurtTrigger && parameter.type == AnimatorControllerParameterType.Trigger) hasHurtParameter = true;
-            if (parameter.name == "HeadshotDeath" && parameter.type == AnimatorControllerParameterType.Bool) hasHeadshotParameter = true;
             if (parameter.name == "AnimationRate" && parameter.type == AnimatorControllerParameterType.Float) hasAnimationRateParameter = true;
             if (parameter.name == "CycleOffset" && parameter.type == AnimatorControllerParameterType.Float) hasCycleOffsetParameter = true;
         }
@@ -393,10 +426,11 @@ public class ZombieAI : MonoBehaviour
     private void SetAnimationSpeed(float value)
     {
         if (anim == null) return;
-        if (hasSpeedParameter) anim.SetFloat(speedParam, value, 0.08f, Time.deltaTime);
+        float movement = archetype == ZombieArchetype.Runner ? value : Mathf.Min(2.5f, value);
+        if (hasSpeedParameter) anim.SetFloat(speedParam, movement, 0.08f, Time.deltaTime);
         if (hasAnimationRateParameter)
         {
-            float referenceSpeed = value >= 2.7f ? runAnimationSpeed : walkAnimationSpeed;
+            float referenceSpeed = archetype == ZombieArchetype.Runner ? runAnimationSpeed : walkAnimationSpeed;
             float rate = value > 0.1f ? Mathf.Clamp(value / Mathf.Max(0.1f, referenceSpeed) * cadenceVariation, 0.6f, 1.45f) : 1f;
             anim.SetFloat("AnimationRate", rate, 0.1f, Time.deltaTime);
         }
